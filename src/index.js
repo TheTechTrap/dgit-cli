@@ -6,6 +6,7 @@ import { WORKDIR } from './api/WORKDIR.js'
 import { add } from './api/add.js'
 import { addNote } from './api/addNote.js'
 import { addRemote } from './api/addRemote.js'
+import { addArweaveRemote } from './api/addArweaveRemote.js'
 import { annotatedTag } from './api/annotatedTag.js'
 import { branch } from './api/branch.js'
 import { checkout } from './api/checkout.js'
@@ -41,6 +42,7 @@ import { merge } from './api/merge.js'
 import { packObjects } from './api/packObjects.js'
 import { pull } from './api/pull.js'
 import { push } from './api/push.js'
+import { pushToArweave } from './api/pushToArweave.js'
 import { readBlob } from './api/readBlob.js'
 import { readCommit } from './api/readCommit.js'
 import { readNote } from './api/readNote.js'
@@ -75,6 +77,7 @@ export {
   add,
   addNote,
   addRemote,
+  addArweaveRemote,
   annotatedTag,
   branch,
   checkout,
@@ -111,6 +114,7 @@ export {
   packObjects,
   pull,
   push,
+  pushToArweave,
   readBlob,
   readCommit,
   readNote,
@@ -180,6 +184,7 @@ export default {
   packObjects,
   pull,
   push,
+  pushToArweave,
   readBlob,
   readCommit,
   readNote,
