@@ -22,7 +22,6 @@ import { splitLines } from '../utils/splitLines.js'
 import { parseReceivePackResponse } from '../wire/parseReceivePackResponse.js'
 import { writeReceivePackRequest } from '../wire/writeReceivePackRequest.js'
 import { _packObjects } from './packObjects.js'
-import Arweave from 'arweave/node'
 import {
   getRefsOnArweave,
   getRef,

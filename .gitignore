@@ -6,7 +6,7 @@
 /http
 /index.cjs
 /index.d.ts
-/index.js
+# /index.js
 /index.umd.min.js
 /index.umd.min.d.ts
 /index.umd.min.js.map
