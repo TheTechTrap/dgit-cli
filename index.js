@@ -8969,6 +8969,395 @@ async function fetch({
   }
 }
 
+// prettier-ignore
+const argitRemoteURIRegex = '^argit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)';
+
+const repoQuery = remoteURI => {
+  const { repoOwnerAddress, repoName } = parseArgitRemoteURI(remoteURI);
+  return {
+    op: 'and',
+    expr1: {
+      op: 'and',
+      expr1: {
+        op: 'equals',
+        expr1: 'App-Name',
+        expr2: 'argit',
+      },
+      expr2: {
+        op: 'equals',
+        expr1: 'from',
+        expr2: repoOwnerAddress,
+      },
+    },
+    expr2: { op: 'equals', expr1: 'Repo', expr2: repoName },
+  }
+};
+
+function parseArgitRemoteURI(remoteURI) {
+  const matchGroups = remoteURI.match(argitRemoteURIRegex);
+  const repoOwnerAddress = matchGroups[1];
+  const repoName = matchGroups[2];
+
+  return { repoOwnerAddress, repoName }
+}
+
+function addTransactionTags(tx, repo, txType) {
+  tx.addTag('Repo', repo);
+  tx.addTag('Type', txType);
+  tx.addTag('Content-Type', 'application/json');
+  tx.addTag('App-Name', 'argit');
+  tx.addTag('version', '0.0.1');
+  tx.addTag('Unix-Time', Math.round(new Date().getTime() / 1000)); // Add Unix timestamp
+  return tx
+}
+
+async function updateRef(arweave, wallet, remoteURI, name, ref) {
+  const { repoName } = parseArgitRemoteURI(remoteURI);
+  const data = JSON.stringify({ name, ref });
+  let tx = await arweave.createTransaction({ data }, wallet);
+  tx = addTransactionTags(tx, repoName, 'update-ref');
+
+  await arweave.transactions.sign(tx, wallet); // Sign transaction
+  arweave.transactions.post(tx); // Post transaction
+}
+
+async function getRef(arweave, remoteURI, name) {
+  const query = {
+    op: 'and',
+    expr1: repoQuery(remoteURI),
+    expr2: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
+  };
+  const txids = await arweave.arql(query);
+  const tx_rows = await Promise.all(
+    txids.map(async txid => {
+      let tx_row = {};
+      const tx = await arweave.transactions.get(txid);
+      tx.get('tags').forEach(tag => {
+        const key = tag.get('name', { decode: true, string: true });
+        const value = tag.get('value', { decode: true, string: true });
+        if (key === 'Unix-Time') tx_row.unixTime = value;
+      });
+
+      const data = tx.get('data', { decode: true, string: true });
+      const decoded = JSON.parse(data);
+      tx_row.name = decoded.name;
+      tx_row.value = decoded.ref;
+
+      return tx_row
+    })
+  );
+
+  const refs = tx_rows.filter(tx_row => tx_row.name === name);
+  if (refs.length === 0) return '0000000000000000000000000000000000000000'
+
+  // descending order
+  tx_rows.sort((a, b) => {
+    Number(b.unixTime) - Number(a.unixTime);
+  });
+  return tx_rows[0].ref
+}
+
+async function pushPackfile(
+  arweave,
+  wallet,
+  remoteURI,
+  oldoid,
+  oid,
+  packfile
+) {
+  const { repoName } = parseArgitRemoteURI(remoteURI);
+  const data = JSON.stringify({ oldoid, oid, packfile });
+  let tx = await arweave.createTransaction({ data }, wallet);
+  tx = addTransactionTags(tx, repoName, 'send-pack');
+
+  await arweave.transactions.sign(tx, wallet);
+  arweave.transactions.post(tx); // Post transaction
+}
+
+async function fetchPackfiles(arweave, remoteURI) {
+  const query = {
+    op: 'and',
+    expr1: repoQuery(remoteURI),
+    expr2: { op: 'equals', expr1: 'Type', expr2: 'send-pack' },
+  };
+  const txids = await arweave.arql(query);
+  const packfiles = await Promise.all(
+    txids.map(async txid => {
+      const data = await arweave.transactions.getData(txid, {
+        decode: true,
+        string: true,
+      });
+      return JSON.parse(data)
+    })
+  );
+  return packfiles
+}
+
+async function getRefsOnArweave(arweave, remoteURI) {
+  const refs = new Map();
+  const query = {
+    op: 'and',
+    expr1: repoQuery(remoteURI),
+    expr2: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
+  };
+  const txids = await arweave.arql(query);
+  const tx_rows = await Promise.all(
+    txids.map(async txid => {
+      let ref = {};
+      const tx = await arweave.transactions.get(txid);
+      tx.get('tags').forEach(tag => {
+        const key = tag.get('name', { decode: true, string: true });
+        const value = tag.get('value', { decode: true, string: true });
+        if (key === 'Unix-Time') ref.unixTime = value;
+      });
+
+      const data = tx.get('data', { decode: true, string: true });
+      const decoded = JSON.parse(data);
+      ref.name = decoded.name;
+      ref.value = decoded.ref;
+
+      return ref
+    })
+  );
+
+  // descending order
+  tx_rows.sort((a, b) => {
+    Number(b.unixTime) - Number(a.unixTime);
+  });
+
+  tx_rows.forEach(ref => {
+    if (!refs.has(ref.name)) refs.set(ref.name, ref.value);
+  });
+
+  return refs
+}
+
+// @ts-check
+
+/**
+ *
+ * @typedef {object} FetchResult - The object returned has the following schema:
+ * @property {string | null} defaultBranch - The branch that is cloned if no branch is specified
+ * @property {string | null} fetchHead - The SHA-1 object id of the fetched head commit
+ * @property {string | null} fetchHeadDescription - a textual description of the branch that was fetched
+ * @property {Object<string, string>} [headers] - The HTTP response headers returned by the git server
+ * @property {string[]} [pruned] - A list of branches that were pruned, if you provided the `prune` parameter
+ *
+ */
+
+/**
+ * @param {object} args
+ * @param {import('../models/FileSystem.js').FileSystem} args.fs
+ * @param {HttpClient} args.http
+ * @param {ProgressCallback} [args.onProgress]
+ * @param {MessageCallback} [args.onMessage]
+ * @param {AuthCallback} [args.onAuth]
+ * @param {AuthFailureCallback} [args.onAuthFailure]
+ * @param {AuthSuccessCallback} [args.onAuthSuccess]
+ * @param {string} args.gitdir
+ * @param {string|void} [args.url]
+ * @param {string} [args.corsProxy]
+ * @param {string} [args.ref]
+ * @param {string} [args.remoteRef]
+ * @param {string} [args.remote]
+ * @param {boolean} [args.singleBranch = false]
+ * @param {boolean} [args.tags = false]
+ * @param {number} [args.depth]
+ * @param {Date} [args.since]
+ * @param {string[]} [args.exclude = []]
+ * @param {boolean} [args.relative = false]
+ * @param {Object<string, string>} [args.headers]
+ * @param {boolean} [args.prune]
+ * @param {boolean} [args.pruneTags]
+ * @param {Arweave} [args.arweave]
+ *
+ * @returns {Promise<FetchResult>}
+ * @see FetchResult
+ */
+async function _fetchFromArweave({
+  fs,
+  http,
+  onProgress,
+  onMessage,
+  onAuth,
+  onAuthSuccess,
+  onAuthFailure,
+  gitdir,
+  ref: _ref,
+  remoteRef: _remoteRef,
+  remote: _remote,
+  url: _url,
+  corsProxy,
+  depth = null,
+  since = null,
+  exclude = [],
+  relative = false,
+  tags = false,
+  singleBranch = false,
+  headers = {},
+  prune = false,
+  pruneTags = false,
+  arweave,
+}) {
+  const ref = _ref || (await _currentBranch({ fs, gitdir, test: true }));
+  const config = await GitConfigManager.get({ fs, gitdir });
+  // Figure out what remote to use.
+  const remote =
+    _remote || (ref && (await config.get(`branch.${ref}.remote`))) || 'origin';
+  // Lookup the URL for the given remote.
+  const url = _url || (await config.get(`remote.${remote}.url`));
+  if (typeof url === 'undefined') {
+    throw new MissingParameterError('remote OR url')
+  }
+  // Figure out what remote ref to use.
+  const remoteRef =
+    _remoteRef ||
+    (ref && (await config.get(`branch.${ref}.merge`))) ||
+    _ref ||
+    'HEAD';
+
+  if (corsProxy === undefined) {
+    corsProxy = await config.get('http.corsProxy');
+  }
+
+  const remoteRefs = await getRefsOnArweave(arweave, url);
+  // For the special case of an empty repository with no refs, return null.
+  if (remoteRefs.size === 0) {
+    return {
+      defaultBranch: null,
+      fetchHead: null,
+      fetchHeadDescription: null,
+    }
+  }
+
+  // Figure out the SHA for the requested ref
+  const { oid, fullref } = GitRefManager.resolveAgainstMap({
+    ref: remoteRef,
+    map: remoteRefs,
+  });
+
+  const packfiles = await fetchPackfiles(arweave, url);
+
+  // Write packfiles
+  console.log(packfiles);
+
+  // Update local remote refs
+  // if (singleBranch) {
+  //   const refs = new Map([[fullref, oid]])
+  //   // But wait, maybe it was a symref, like 'HEAD'!
+  //   // We need to save all the refs in the symref chain (sigh).
+  //   const symrefs = new Map()
+  //   let bail = 10
+  //   let key = fullref
+  //   while (bail--) {
+  //     const value = remoteHTTP.symrefs.get(key)
+  //     if (value === undefined) break
+  //     symrefs.set(key, value)
+  //     key = value
+  //   }
+  //   // final value must not be a symref but a real ref
+  //   refs.set(key, remoteRefs.get(key))
+  //   const { pruned } = await GitRefManager.updateRemoteRefs({
+  //     fs,
+  //     gitdir,
+  //     remote,
+  //     refs,
+  //     symrefs,
+  //     tags,
+  //     prune,
+  //   })
+  //   if (prune) {
+  //     response.pruned = pruned
+  //   }
+  // } else {
+  //   const { pruned } = await GitRefManager.updateRemoteRefs({
+  //     fs,
+  //     gitdir,
+  //     remote,
+  //     refs: remoteRefs,
+  //     symrefs: remoteHTTP.symrefs,
+  //     tags,
+  //     prune,
+  //     pruneTags,
+  //   })
+  //   if (prune) {
+  //     response.pruned = pruned
+  //   }
+  // }
+  // // We need this value later for the `clone` command.
+  // response.HEAD = remoteHTTP.symrefs.get('HEAD')
+  // // AWS CodeCommit doesn't list HEAD as a symref, but we can reverse engineer it
+  // // Find the SHA of the branch called HEAD
+  // if (response.HEAD === undefined) {
+  //   const { oid } = GitRefManager.resolveAgainstMap({
+  //     ref: 'HEAD',
+  //     map: remoteRefs,
+  //   })
+  //   // Use the name of the first branch that's not called HEAD that has
+  //   // the same SHA as the branch called HEAD.
+  //   for (const [key, value] of remoteRefs.entries()) {
+  //     if (key !== 'HEAD' && value === oid) {
+  //       response.HEAD = key
+  //       break
+  //     }
+  //   }
+  // }
+  // const noun = fullref.startsWith('refs/tags') ? 'tag' : 'branch'
+  // response.FETCH_HEAD = {
+  //   oid,
+  //   description: `${noun} '${abbreviateRef(fullref)}' of ${url}`,
+  // }
+
+  // if (onProgress || onMessage) {
+  //   const lines = splitLines(response.progress)
+  //   forAwait(lines, async line => {
+  //     if (onMessage) await onMessage(line)
+  //     if (onProgress) {
+  //       const matches = line.match(/([^:]*).*\((\d+?)\/(\d+?)\)/)
+  //       if (matches) {
+  //         await onProgress({
+  //           phase: matches[1].trim(),
+  //           loaded: parseInt(matches[2], 10),
+  //           total: parseInt(matches[3], 10),
+  //         })
+  //       }
+  //     }
+  //   })
+  // }
+  // const packfile = Buffer.from(await collect(response.packfile))
+  // const packfileSha = packfile.slice(-20).toString('hex')
+  // const res = {
+  //   defaultBranch: response.HEAD,
+  //   fetchHead: response.FETCH_HEAD.oid,
+  //   fetchHeadDescription: response.FETCH_HEAD.description,
+  // }
+  // if (response.headers) {
+  //   res.headers = response.headers
+  // }
+  // if (prune) {
+  //   res.pruned = response.pruned
+  // }
+  // // This is a quick fix for the empty .git/objects/pack/pack-.pack file error,
+  // // which due to the way `git-list-pack` works causes the program to hang when it tries to read it.
+  // // TODO: Longer term, we should actually:
+  // // a) NOT concatenate the entire packfile into memory (line 78),
+  // // b) compute the SHA of the stream except for the last 20 bytes, using the same library used in push.js, and
+  // // c) compare the computed SHA with the last 20 bytes of the stream before saving to disk, and throwing a "packfile got corrupted during download" error if the SHA doesn't match.
+  // if (packfileSha !== '' && !emptyPackfile(packfile)) {
+  //   res.packfile = `objects/pack/pack-${packfileSha}.pack`
+  //   const fullpath = join(gitdir, res.packfile)
+  //   await fs.write(fullpath, packfile)
+  //   const getExternalRefDelta = oid => readObject({ fs, gitdir, oid })
+  //   const idx = await GitPackIndex.fromPack({
+  //     pack: packfile,
+  //     getExternalRefDelta,
+  //     onProgress,
+  //   })
+  //   await fs.write(fullpath.replace(/\.pack$/, '.idx'), await idx.toBuffer())
+  // }
+  // return res
+}
+
 // @ts-check
 
 /**
@@ -11427,169 +11816,6 @@ async function push({
     err.caller = 'git.push';
     throw err
   }
-}
-
-// prettier-ignore
-const argitRemoteURIRegex = '^argit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)';
-
-const repoQuery = remoteURI => {
-  const { repoOwnerAddress, repoName } = parseArgitRemoteURI(remoteURI);
-  return {
-    op: 'and',
-    expr1: {
-      op: 'and',
-      expr1: {
-        op: 'equals',
-        expr1: 'App-Name',
-        expr2: 'argit',
-      },
-      expr2: {
-        op: 'equals',
-        expr1: 'from',
-        expr2: repoOwnerAddress,
-      },
-    },
-    expr2: { op: 'equals', expr1: 'Repo', expr2: repoName },
-  }
-};
-
-function parseArgitRemoteURI(remoteURI) {
-  const matchGroups = remoteURI.match(argitRemoteURIRegex);
-  const repoOwnerAddress = matchGroups[1];
-  const repoName = matchGroups[2];
-
-  return { repoOwnerAddress, repoName }
-}
-
-function addTransactionTags(tx, repo, txType) {
-  tx.addTag('Repo', repo);
-  tx.addTag('Type', txType);
-  tx.addTag('Content-Type', 'application/json');
-  tx.addTag('App-Name', 'argit');
-  tx.addTag('version', '0.0.1');
-  tx.addTag('Unix-Time', Math.round(new Date().getTime() / 1000)); // Add Unix timestamp
-  return tx
-}
-
-async function updateRef(arweave, wallet, remoteURI, name, ref) {
-  const { repoName } = parseArgitRemoteURI(remoteURI);
-  const data = JSON.stringify({ name, ref });
-  let tx = await arweave.createTransaction({ data }, wallet);
-  tx = addTransactionTags(tx, repoName, 'update-ref');
-
-  await arweave.transactions.sign(tx, wallet); // Sign transaction
-  arweave.transactions.post(tx); // Post transaction
-}
-
-async function getRef(arweave, remoteURI, name) {
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
-  };
-  const txids = await arweave.arql(query);
-  const tx_rows = await Promise.all(
-    txids.map(async txid => {
-      let tx_row = {};
-      const tx = await arweave.transactions.get(txid);
-      tx.get('tags').forEach(tag => {
-        const key = tag.get('name', { decode: true, string: true });
-        const value = tag.get('value', { decode: true, string: true });
-        if (key === 'Unix-Time') tx_row.unixTime = value;
-      });
-
-      const data = tx.get('data', { decode: true, string: true });
-      const decoded = JSON.parse(data);
-      tx_row.name = decoded.name;
-      tx_row.value = decoded.ref;
-
-      return tx_row
-    })
-  );
-
-  const refs = tx_rows.filter(tx_row => tx_row.name === name);
-  if (refs.length === 0) return '0000000000000000000000000000000000000000'
-
-  // descending order
-  tx_rows.sort((a, b) => {
-    Number(b.unixTime) - Number(a.unixTime);
-  });
-  return tx_rows[0].ref
-}
-
-async function pushPackfile(
-  arweave,
-  wallet,
-  remoteURI,
-  oldoid,
-  oid,
-  packfile
-) {
-  const { repoName } = parseArgitRemoteURI(remoteURI);
-  const data = JSON.stringify({ oldoid, oid, packfile });
-  let tx = await arweave.createTransaction({ data }, wallet);
-  tx = addTransactionTags(tx, repoName, 'send-pack');
-
-  await arweave.transactions.sign(tx, wallet);
-  arweave.transactions.post(tx); // Post transaction
-}
-
-async function fetchPackfiles(arweave, remoteURI) {
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: { op: 'equals', expr1: 'Type', expr2: 'send-pack' },
-  };
-  const txids = await arweave.arql(query);
-  const packfiles = await Promise.all(
-    txids.map(async txid => {
-      const data = await arweave.transactions.getData(txid, {
-        decode: true,
-        string: true,
-      });
-      return JSON.parse(data)
-    })
-  );
-  return packfiles
-}
-
-async function getRefsOnArweave(arweave, remoteURI) {
-  const refs = new Map();
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
-  };
-  const txids = await arweave.arql(query);
-  const tx_rows = await Promise.all(
-    txids.map(async txid => {
-      let ref = {};
-      const tx = await arweave.transactions.get(txid);
-      tx.get('tags').forEach(tag => {
-        const key = tag.get('name', { decode: true, string: true });
-        const value = tag.get('value', { decode: true, string: true });
-        if (key === 'Unix-Time') ref.unixTime = value;
-      });
-
-      const data = tx.get('data', { decode: true, string: true });
-      const decoded = JSON.parse(data);
-      ref.name = decoded.name;
-      ref.value = decoded.ref;
-
-      return ref
-    })
-  );
-
-  // descending order
-  tx_rows.sort((a, b) => {
-    Number(b.unixTime) - Number(a.unixTime);
-  });
-
-  tx_rows.forEach(ref => {
-    if (!refs.has(ref.name)) refs.set(ref.name, ref.value);
-  });
-
-  return refs
 }
 
 // @ts-check

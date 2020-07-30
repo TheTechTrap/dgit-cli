@@ -1,7 +1,7 @@
 // @ts-check
 import '../typedefs.js'
 
-import { _fetch } from '../commands/fetch.js'
+import { _fetchFromArweave } from '../commands/fetchFromArweave.js'
 import { FileSystem } from '../models/FileSystem.js'
 import { assertParameter } from '../utils/assertParameter.js'
 import { join } from '../utils/join.js'
