@@ -26,8 +26,8 @@ const repoQuery = remoteURI => {
 
 function parseArgitRemoteURI(remoteURI) {
   const matchGroups = remoteURI.match(argitRemoteURIRegex)
-  const repoOwnerAddress = matchGroups[0]
-  const repoName = matchGroups[1]
+  const repoOwnerAddress = matchGroups[1]
+  const repoName = matchGroups[2]
 
   return { repoOwnerAddress, repoName }
 }
@@ -49,16 +49,7 @@ export async function updateRef(arweave, wallet, remoteURI, name, ref) {
   tx = addTransactionTags(tx, repoName, 'update-ref')
 
   await arweave.transactions.sign(tx, wallet) // Sign transaction
-
-  // Check if sending wallet has enough AR to cover transaction fees
-  let jwk_wallet = await arweave.wallets.jwkToAddress(wallet)
-  let wallet_balance = await arweave.wallets.getBalance(jwk_wallet) // Collect balance
-  let balance_in_ar = await arweave.ar.winstonToAr(wallet_balance) // Convert winston to AR
-
-  if (balance_in_ar < 0.00000001 + parseFloat(this.state.numTokens)) {
-    return
-  }
-  await arweave.transactions.post(tx) // Post transaction
+  arweave.transactions.post(tx) // Post transaction
 }
 
 export async function getRef(arweave, remoteURI, name) {
@@ -111,16 +102,7 @@ export async function pushPackfile(
   tx = addTransactionTags(tx, repoName, 'send-pack')
 
   await arweave.transactions.sign(tx, wallet)
-
-  // Check if sending wallet has enough AR to cover transaction fees
-  let jwk_wallet = await arweave.wallets.jwkToAddress(wallet)
-  let wallet_balance = await arweave.wallets.getBalance(jwk_wallet) // Collect balance
-  let balance_in_ar = await arweave.ar.winstonToAr(wallet_balance) // Convert winston to AR
-
-  if (balance_in_ar < 0.00000001 + parseFloat(this.state.numTokens)) {
-    return
-  }
-  await arweave.transactions.post(tx) // Post transaction
+  arweave.transactions.post(tx) // Post transaction
 }
 
 export async function fetchPackfiles(arweave, remoteURI) {

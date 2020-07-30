@@ -230,7 +230,7 @@ export async function _pushToArweave({
   if (objects.size !== 0)
     await pushPackfile(arweave, wallet, url, oldoid, oid, packfile)
 
-  await updateRef(arguments, wallet, url, fullRemoteRef, oid)
+  await updateRef(arweave, wallet, url, fullRemoteRef, oid)
 
   // Update the local copy of the remote ref
   if (remote) {
