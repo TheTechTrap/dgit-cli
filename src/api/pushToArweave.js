@@ -97,6 +97,8 @@ export async function pushToArweave({
       delete: _delete,
       corsProxy,
       headers,
+      arweave,
+      wallet,
     })
   } catch (err) {
     err.caller = 'git.pushToArweave'
