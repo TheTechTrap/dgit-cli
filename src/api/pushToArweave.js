@@ -77,7 +77,7 @@ export async function pushToArweave({
 }) {
   try {
     assertParameter('fs', fs)
-    assertParameter('http', http)
+    // assertParameter('http', http)
     assertParameter('gitdir', gitdir)
 
     return await _pushToArweave({
