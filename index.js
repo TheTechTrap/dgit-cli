@@ -5,8 +5,8 @@ import pako from 'pako';
 import ignore from 'ignore';
 import pify from 'pify';
 import cleanGitRef from 'clean-git-ref';
-import diff3Merge from 'diff3';
 import 'querystring';
+import diff3Merge from 'diff3';
 
 /**
  * @typedef {Object} GitProgressEvent
@@ -4957,94 +4957,6 @@ async function addRemote({
 // @ts-check
 
 /**
- * @param {object} args
- * @param {import('../models/FileSystem.js').FileSystem} args.fs
- * @param {string} args.gitdir
- * @param {string} args.remote
- * @param {string} args.url
- * @param {boolean} args.force
- *
- * @returns {Promise<void>}
- *
- */
-async function _addArweaveRemote({ fs, gitdir, remote, url, force }) {
-  if (remote !== cleanGitRef.clean(remote)) {
-    throw new InvalidRefNameError(remote, cleanGitRef.clean(remote))
-  }
-  const config = await GitConfigManager.get({ fs, gitdir });
-  if (!force) {
-    // Check that setting it wouldn't overwrite.
-    const remoteNames = await config.getSubsections('arweaveremote');
-    if (remoteNames.includes(remote)) {
-      // Throw an error if it would overwrite an existing remote,
-      // but not if it's simply setting the same value again.
-      if (url !== (await config.get(`remote.${remote}.url`))) {
-        throw new AlreadyExistsError('remote', remote)
-      }
-    }
-  }
-  await config.set(`remote.${remote}.url`, url);
-  await config.set(
-    `remote.${remote}.fetch`,
-    `+refs/heads/*:refs/remotes/${remote}/*`
-  );
-  await GitConfigManager.save({ fs, gitdir, config });
-}
-
-// @ts-check
-
-/**
- * Add or update a remote
- *
- * @param {object} args
- * @param {FsClient} args.fs - a file system implementation
- * @param {string} [args.dir] - The [working tree](dir-vs-gitdir.md) directory path
- * @param {string} [args.gitdir] - [required] The [git directory](dir-vs-gitdir.md) path
- * @param {string} args.remote - The name of the remote
- * @param {string} args.url - The URL of the remote
- * @param {boolean} [args.force = false] - Instead of throwing an error if a remote named `remote` already exists, overwrite the existing remote.
- *
- * @returns {Promise<void>} Resolves successfully when filesystem operations are complete
- *
- * @example
- * await git.addArweaveRemote({
- *   fs,
- *   dir: '/tutorial',
- *   remote: 'upstream',
- *   url: 'https://github.com/isomorphic-git/isomorphic-git'
- * })
- * console.log('done')
- *
- */
-async function addArweaveRemote({
-  fs,
-  dir,
-  gitdir = join(dir, '.git'),
-  remote,
-  url,
-  force = false,
-}) {
-  try {
-    assertParameter('fs', fs);
-    assertParameter('gitdir', gitdir);
-    assertParameter('remote', remote);
-    assertParameter('url', url);
-    return await _addArweaveRemote({
-      fs: new FileSystem(fs),
-      gitdir,
-      remote,
-      url,
-      force,
-    })
-  } catch (err) {
-    err.caller = 'git.addArweaveRemote';
-    throw err
-  }
-}
-
-// @ts-check
-
-/**
  * Create an annotated tag.
  *
  * @param {object} args
@@ -7690,6 +7602,534 @@ async function clone({
   }
 }
 
+// prettier-ignore
+const argitRemoteURIRegex = '^argit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)';
+
+const repoQuery = remoteURI => {
+  const { repoOwnerAddress, repoName } = parseArgitRemoteURI(remoteURI);
+  return {
+    op: 'and',
+    expr1: {
+      op: 'and',
+      expr1: {
+        op: 'equals',
+        expr1: 'App-Name',
+        expr2: 'test-repo',
+      },
+      expr2: {
+        op: 'equals',
+        expr1: 'from',
+        expr2: repoOwnerAddress,
+      },
+    },
+    expr2: { op: 'equals', expr1: 'Repo', expr2: repoName },
+  }
+};
+
+function parseArgitRemoteURI(remoteURI) {
+  const matchGroups = remoteURI.match(argitRemoteURIRegex);
+  const repoOwnerAddress = matchGroups[1];
+  const repoName = matchGroups[2];
+
+  return { repoOwnerAddress, repoName }
+}
+
+function addTransactionTags(tx, repo, txType) {
+  tx.addTag('Repo', repo);
+  tx.addTag('Type', txType);
+  tx.addTag('Content-Type', 'application/json');
+  tx.addTag('App-Name', 'test-repo');
+  tx.addTag('version', '0.0.1');
+  tx.addTag('Unix-Time', Math.round(new Date().getTime() / 1000)); // Add Unix timestamp
+  return tx
+}
+
+async function updateRef(arweave, wallet, remoteURI, name, ref) {
+  const { repoName } = parseArgitRemoteURI(remoteURI);
+  const data = JSON.stringify({ name, ref });
+  let tx = await arweave.createTransaction({ data }, wallet);
+  tx = addTransactionTags(tx, repoName, 'update-ref');
+
+  await arweave.transactions.sign(tx, wallet); // Sign transaction
+  arweave.transactions.post(tx); // Post transaction
+}
+
+async function getRef(arweave, remoteURI, name) {
+  const query = {
+    op: 'and',
+    expr1: repoQuery(remoteURI),
+    expr2: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
+  };
+  const txids = await arweave.arql(query);
+  const tx_rows = await Promise.all(
+    txids.map(async txid => {
+      let tx_row = {};
+      const tx = await arweave.transactions.get(txid);
+      tx.get('tags').forEach(tag => {
+        const key = tag.get('name', { decode: true, string: true });
+        const value = tag.get('value', { decode: true, string: true });
+        if (key === 'Unix-Time') tx_row.unixTime = value;
+      });
+
+      const data = tx.get('data', { decode: true, string: true });
+      const decoded = JSON.parse(data);
+      tx_row.name = decoded.name;
+      tx_row.value = decoded.ref;
+
+      return tx_row
+    })
+  );
+
+  const refs = tx_rows.filter(tx_row => tx_row.name === name);
+  console.log('refs', refs);
+  if (refs.length === 0) return '0000000000000000000000000000000000000000'
+
+  // descending order
+  tx_rows.sort((a, b) => {
+    Number(b.unixTime) - Number(a.unixTime);
+  });
+  return tx_rows[0].ref
+}
+
+async function pushPackfile(
+  arweave,
+  wallet,
+  remoteURI,
+  oldoid,
+  oid,
+  packfile
+) {
+  const { repoName } = parseArgitRemoteURI(remoteURI);
+
+  let tx = await arweave.createTransaction({ data: packfile.packfile }, wallet);
+  tx = addTransactionTags(tx, repoName, 'send-pack');
+  tx.addTag('oid', oid);
+  tx.addTag('oldoid', oldoid);
+  tx.addTag('filename', packfile.filename);
+
+  await arweave.transactions.sign(tx, wallet);
+  let uploader = await arweave.transactions.getUploader(tx);
+
+  while (!uploader.isComplete) {
+    await uploader.uploadChunk();
+    console.log(
+      `${uploader.pctComplete}% complete, ${uploader.uploadedChunks}/${uploader.totalChunks}`
+    );
+  }
+}
+
+async function fetchPackfiles(arweave, remoteURI) {
+  const query = {
+    op: 'and',
+    expr1: repoQuery(remoteURI),
+    expr2: { op: 'equals', expr1: 'Type', expr2: 'send-pack' },
+  };
+  const txids = await arweave.arql(query);
+  const packfiles = await Promise.all(
+    txids.map(async txid => {
+      const tx = await arweave.transactions.get(txid);
+      let filename = '';
+      tx.get('tags').forEach(tag => {
+        const key = tag.get('name', { decode: true, string: true });
+        const value = tag.get('value', { decode: true, string: true });
+        if (key === 'filename') filename = value;
+      });
+      const data = tx.get('data', { decode: true });
+      return { data, filename }
+    })
+  );
+  return packfiles
+}
+
+async function getRefsOnArweave(arweave, remoteURI) {
+  const refs = new Map();
+  const query = {
+    op: 'and',
+    expr1: repoQuery(remoteURI),
+    expr2: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
+  };
+  const txids = await arweave.arql(query);
+  const tx_rows = await Promise.all(
+    txids.map(async txid => {
+      let ref = {};
+      const tx = await arweave.transactions.get(txid);
+      tx.get('tags').forEach(tag => {
+        const key = tag.get('name', { decode: true, string: true });
+        const value = tag.get('value', { decode: true, string: true });
+        if (key === 'Unix-Time') ref.unixTime = value;
+      });
+
+      const data = tx.get('data', { decode: true, string: true });
+      const decoded = JSON.parse(data);
+      ref.name = decoded.name;
+      ref.value = decoded.ref;
+
+      return ref
+    })
+  );
+
+  // descending order
+  tx_rows.sort((a, b) => {
+    Number(b.unixTime) - Number(a.unixTime);
+  });
+
+  tx_rows.forEach(ref => {
+    if (!refs.has(ref.name)) refs.set(ref.name, ref.value);
+  });
+
+  return refs
+}
+
+// @ts-check
+
+/**
+ *
+ * @typedef {object} FetchResult - The object returned has the following schema:
+ * @property {string | null} defaultBranch - The branch that is cloned if no branch is specified
+ * @property {string | null} fetchHead - The SHA-1 object id of the fetched head commit
+ * @property {string | null} fetchHeadDescription - a textual description of the branch that was fetched
+ * @property {Object<string, string>} [headers] - The HTTP response headers returned by the git server
+ * @property {string[]} [pruned] - A list of branches that were pruned, if you provided the `prune` parameter
+ *
+ */
+
+/**
+ * @param {object} args
+ * @param {import('../models/FileSystem.js').FileSystem} args.fs
+ * @param {import { fetch } from '../../index.d';
+HttpClient} args.http
+ * @param {ProgressCallback} [args.onProgress]
+ * @param {MessageCallback} [args.onMessage]
+ * @param {AuthCallback} [args.onAuth]
+ * @param {AuthFailureCallback} [args.onAuthFailure]
+ * @param {AuthSuccessCallback} [args.onAuthSuccess]
+ * @param {string} args.gitdir
+ * @param {string|void} [args.url]
+ * @param {string} [args.corsProxy]
+ * @param {string} [args.ref]
+ * @param {string} [args.remoteRef]
+ * @param {string} [args.remote]
+ * @param {boolean} [args.singleBranch = false]
+ * @param {boolean} [args.tags = false]
+ * @param {number} [args.depth]
+ * @param {Date} [args.since]
+ * @param {string[]} [args.exclude = []]
+ * @param {boolean} [args.relative = false]
+ * @param {Object<string, string>} [args.headers]
+ * @param {boolean} [args.prune]
+ * @param {boolean} [args.pruneTags]
+ * @param {Arweave} [args.arweave]
+ *
+ * @returns {Promise<FetchResult>}
+ * @see FetchResult
+ */
+async function _fetchFromArweave({
+  fs,
+  http,
+  onProgress,
+  onMessage,
+  onAuth,
+  onAuthSuccess,
+  onAuthFailure,
+  gitdir,
+  ref: _ref,
+  remoteRef: _remoteRef,
+  remote: _remote,
+  url: _url,
+  corsProxy,
+  depth = null,
+  since = null,
+  exclude = [],
+  relative = false,
+  tags = false,
+  singleBranch = false,
+  headers = {},
+  prune = false,
+  pruneTags = false,
+  arweave,
+}) {
+  const ref = _ref || (await _currentBranch({ fs, gitdir, test: true }));
+  const config = await GitConfigManager.get({ fs, gitdir });
+  // Figure out what remote to use.
+  const remote =
+    _remote || (ref && (await config.get(`branch.${ref}.remote`))) || 'origin';
+  // Lookup the URL for the given remote.
+  const url = _url || (await config.get(`remote.${remote}.url`));
+  if (typeof url === 'undefined') {
+    throw new MissingParameterError('remote OR url')
+  }
+  // Figure out what remote ref to use.
+  const remoteRef =
+    _remoteRef ||
+    (ref && (await config.get(`branch.${ref}.merge`))) ||
+    _ref ||
+    'master';
+
+  if (corsProxy === undefined) {
+    corsProxy = await config.get('http.corsProxy');
+  }
+
+  const remoteRefs = await getRefsOnArweave(arweave, url);
+  // For the special case of an empty repository with no refs, return null.
+  if (remoteRefs.size === 0) {
+    return {
+      defaultBranch: null,
+      fetchHead: null,
+      fetchHeadDescription: null,
+    }
+  }
+
+  // Figure out the SHA for the requested ref
+  const { oid, fullref } = GitRefManager.resolveAgainstMap({
+    ref: remoteRef,
+    map: remoteRefs,
+  });
+
+  const symrefs = new Map();
+  await GitRefManager.updateRemoteRefs({
+    fs,
+    gitdir,
+    remote,
+    refs: remoteRefs,
+    symrefs,
+    tags,
+    prune,
+  });
+
+  const packfiles = await fetchPackfiles(arweave, url);
+
+  // Write packfiles
+  await Promise.all(
+    packfiles.map(async packfile => {
+      const packfilePath = `objects/pack/${packfile.filename}`;
+      const fullpath = join(gitdir, packfilePath);
+      const buf = Buffer.from(packfile.data);
+      await fs.write(fullpath, buf);
+      const getExternalRefDelta = oid => _readObject({ fs, gitdir, oid });
+      const idx = await GitPackIndex.fromPack({
+        pack: buf,
+        getExternalRefDelta,
+        onProgress,
+      });
+      await fs.write(fullpath.replace(/\.pack$/, '.idx'), await idx.toBuffer());
+    })
+  );
+
+  const noun = fullref.startsWith('refs/tags') ? 'tag' : 'branch';
+  return {
+    defaultBranch: fullref,
+    fetchHead: oid,
+    fetchHeadDescription: `${noun} '${abbreviateRef(fullref)}' of ${url}`,
+  }
+}
+
+// @ts-check
+
+/**
+ * @param {object} args
+ * @param {import('../models/FileSystem.js').FileSystem} args.fs
+ * @param {object} args.cache
+ * @param {HttpClient} args.http
+ * @param {ProgressCallback} [args.onProgress]
+ * @param {MessageCallback} [args.onMessage]
+ * @param {AuthCallback} [args.onAuth]
+ * @param {AuthFailureCallback} [args.onAuthFailure]
+ * @param {AuthSuccessCallback} [args.onAuthSuccess]
+ * @param {string} [args.dir]
+ * @param {string} args.gitdir
+ * @param {string} args.url
+ * @param {string} args.corsProxy
+ * @param {string} args.ref
+ * @param {boolean} args.singleBranch
+ * @param {boolean} args.noCheckout
+ * @param {boolean} args.noTags
+ * @param {string} args.remote
+ * @param {number} args.depth
+ * @param {Date} args.since
+ * @param {string[]} args.exclude
+ * @param {boolean} args.relative
+ * @param {Object<string, string>} args.headers
+ * @param {Arweave} args.arweave
+ *
+ * @returns {Promise<void>} Resolves successfully when clone completes
+ *
+ */
+async function _cloneFromArweave({
+  fs,
+  cache,
+  http,
+  onProgress,
+  onMessage,
+  onAuth,
+  onAuthSuccess,
+  onAuthFailure,
+  dir,
+  gitdir,
+  url,
+  corsProxy,
+  ref,
+  remote,
+  depth,
+  since,
+  exclude,
+  relative,
+  singleBranch,
+  noCheckout,
+  noTags,
+  headers,
+  arweave,
+}) {
+  await _init({ fs, gitdir });
+  await _addRemote({ fs, gitdir, remote, url, force: false });
+  if (corsProxy) {
+    const config = await GitConfigManager.get({ fs, gitdir });
+    await config.set(`http.corsProxy`, corsProxy);
+    await GitConfigManager.save({ fs, gitdir, config });
+  }
+  const { defaultBranch, fetchHead } = await _fetchFromArweave({
+    fs,
+    http,
+    onProgress,
+    onMessage,
+    onAuth,
+    onAuthSuccess,
+    onAuthFailure,
+    gitdir,
+    ref,
+    remote,
+    depth,
+    since,
+    exclude,
+    relative,
+    singleBranch,
+    headers,
+    tags: !noTags,
+    arweave,
+  });
+  if (fetchHead === null) return
+  ref = ref || defaultBranch;
+  ref = ref.replace('refs/heads/', '');
+  // Checkout that branch
+  await _checkout({
+    fs,
+    cache,
+    onProgress,
+    dir,
+    gitdir,
+    ref,
+    remote,
+    noCheckout,
+  });
+}
+
+// @ts-check
+
+/**
+ * Clone a repository
+ *
+ * @param {object} args
+ * @param {FsClient} args.fs - a file system implementation
+ * @param {HttpClient} args.http - an HTTP client
+ * @param {ProgressCallback} [args.onProgress] - optional progress event callback
+ * @param {MessageCallback} [args.onMessage] - optional message event callback
+ * @param {AuthCallback} [args.onAuth] - optional auth fill callback
+ * @param {AuthFailureCallback} [args.onAuthFailure] - optional auth rejected callback
+ * @param {AuthSuccessCallback} [args.onAuthSuccess] - optional auth approved callback
+ * @param {string} args.dir - The [working tree](dir-vs-gitdir.md) directory path
+ * @param {string} [args.gitdir=join(dir,'.git')] - [required] The [git directory](dir-vs-gitdir.md) path
+ * @param {string} args.url - The URL of the remote repository
+ * @param {string} [args.corsProxy] - Optional [CORS proxy](https://www.npmjs.com/%40isomorphic-git/cors-proxy). Value is stored in the git config file for that repo.
+ * @param {string} [args.ref] - Which branch to checkout. By default this is the designated "main branch" of the repository.
+ * @param {boolean} [args.singleBranch = false] - Instead of the default behavior of fetching all the branches, only fetch a single branch.
+ * @param {boolean} [args.noCheckout = false] - If true, clone will only fetch the repo, not check out a branch. Skipping checkout can save a lot of time normally spent writing files to disk.
+ * @param {boolean} [args.noTags = false] - By default clone will fetch all tags. `noTags` disables that behavior.
+ * @param {string} [args.remote = 'origin'] - What to name the remote that is created.
+ * @param {number} [args.depth] - Integer. Determines how much of the git repository's history to retrieve
+ * @param {Date} [args.since] - Only fetch commits created after the given date. Mutually exclusive with `depth`.
+ * @param {string[]} [args.exclude = []] - A list of branches or tags. Instructs the remote server not to send us any commits reachable from these refs.
+ * @param {boolean} [args.relative = false] - Changes the meaning of `depth` to be measured from the current shallow depth rather than from the branch tip.
+ * @param {Object<string, string>} [args.headers = {}] - Additional headers to include in HTTP requests, similar to git's `extraHeader` config
+ * @param {Arweave} [args.arweave]
+ *
+ * @returns {Promise<void>} Resolves successfully when clone completes
+ *
+ * @example
+ * await git.clone({
+ *   fs,
+ *   http,
+ *   dir: '/tutorial',
+ *   corsProxy: 'https://cors.isomorphic-git.org',
+ *   url: 'https://github.com/isomorphic-git/isomorphic-git',
+ *   singleBranch: true,
+ *   depth: 1
+ * })
+ * console.log('done')
+ *
+ */
+async function cloneFromArweave({
+  fs,
+  http,
+  onProgress,
+  onMessage,
+  onAuth,
+  onAuthSuccess,
+  onAuthFailure,
+  dir,
+  gitdir = join(dir, '.git'),
+  url,
+  corsProxy = undefined,
+  ref = undefined,
+  remote = 'origin',
+  depth = undefined,
+  since = undefined,
+  exclude = [],
+  relative = false,
+  singleBranch = false,
+  noCheckout = false,
+  noTags = false,
+  headers = {},
+  arweave,
+}) {
+  try {
+    assertParameter('fs', fs);
+    assertParameter('http', http);
+    assertParameter('gitdir', gitdir);
+    if (!noCheckout) {
+      assertParameter('dir', dir);
+    }
+    assertParameter('url', url);
+
+    return await _cloneFromArweave({
+      fs: new FileSystem(fs),
+      cache: {},
+      http,
+      onProgress,
+      onMessage,
+      onAuth,
+      onAuthSuccess,
+      onAuthFailure,
+      dir,
+      gitdir,
+      url,
+      corsProxy,
+      ref,
+      remote,
+      depth,
+      since,
+      exclude,
+      relative,
+      singleBranch,
+      noCheckout,
+      noTags,
+      headers,
+      arweave,
+    })
+  } catch (err) {
+    err.caller = 'git.cloneFromArweave';
+    throw err
+  }
+}
+
 // @ts-check
 
 /**
@@ -8967,395 +9407,6 @@ async function fetch({
     err.caller = 'git.fetch';
     throw err
   }
-}
-
-// prettier-ignore
-const argitRemoteURIRegex = '^argit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)';
-
-const repoQuery = remoteURI => {
-  const { repoOwnerAddress, repoName } = parseArgitRemoteURI(remoteURI);
-  return {
-    op: 'and',
-    expr1: {
-      op: 'and',
-      expr1: {
-        op: 'equals',
-        expr1: 'App-Name',
-        expr2: 'argit',
-      },
-      expr2: {
-        op: 'equals',
-        expr1: 'from',
-        expr2: repoOwnerAddress,
-      },
-    },
-    expr2: { op: 'equals', expr1: 'Repo', expr2: repoName },
-  }
-};
-
-function parseArgitRemoteURI(remoteURI) {
-  const matchGroups = remoteURI.match(argitRemoteURIRegex);
-  const repoOwnerAddress = matchGroups[1];
-  const repoName = matchGroups[2];
-
-  return { repoOwnerAddress, repoName }
-}
-
-function addTransactionTags(tx, repo, txType) {
-  tx.addTag('Repo', repo);
-  tx.addTag('Type', txType);
-  tx.addTag('Content-Type', 'application/json');
-  tx.addTag('App-Name', 'argit');
-  tx.addTag('version', '0.0.1');
-  tx.addTag('Unix-Time', Math.round(new Date().getTime() / 1000)); // Add Unix timestamp
-  return tx
-}
-
-async function updateRef(arweave, wallet, remoteURI, name, ref) {
-  const { repoName } = parseArgitRemoteURI(remoteURI);
-  const data = JSON.stringify({ name, ref });
-  let tx = await arweave.createTransaction({ data }, wallet);
-  tx = addTransactionTags(tx, repoName, 'update-ref');
-
-  await arweave.transactions.sign(tx, wallet); // Sign transaction
-  arweave.transactions.post(tx); // Post transaction
-}
-
-async function getRef(arweave, remoteURI, name) {
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
-  };
-  const txids = await arweave.arql(query);
-  const tx_rows = await Promise.all(
-    txids.map(async txid => {
-      let tx_row = {};
-      const tx = await arweave.transactions.get(txid);
-      tx.get('tags').forEach(tag => {
-        const key = tag.get('name', { decode: true, string: true });
-        const value = tag.get('value', { decode: true, string: true });
-        if (key === 'Unix-Time') tx_row.unixTime = value;
-      });
-
-      const data = tx.get('data', { decode: true, string: true });
-      const decoded = JSON.parse(data);
-      tx_row.name = decoded.name;
-      tx_row.value = decoded.ref;
-
-      return tx_row
-    })
-  );
-
-  const refs = tx_rows.filter(tx_row => tx_row.name === name);
-  if (refs.length === 0) return '0000000000000000000000000000000000000000'
-
-  // descending order
-  tx_rows.sort((a, b) => {
-    Number(b.unixTime) - Number(a.unixTime);
-  });
-  return tx_rows[0].ref
-}
-
-async function pushPackfile(
-  arweave,
-  wallet,
-  remoteURI,
-  oldoid,
-  oid,
-  packfile
-) {
-  const { repoName } = parseArgitRemoteURI(remoteURI);
-  const data = JSON.stringify({ oldoid, oid, packfile });
-  let tx = await arweave.createTransaction({ data }, wallet);
-  tx = addTransactionTags(tx, repoName, 'send-pack');
-
-  await arweave.transactions.sign(tx, wallet);
-  arweave.transactions.post(tx); // Post transaction
-}
-
-async function fetchPackfiles(arweave, remoteURI) {
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: { op: 'equals', expr1: 'Type', expr2: 'send-pack' },
-  };
-  const txids = await arweave.arql(query);
-  const packfiles = await Promise.all(
-    txids.map(async txid => {
-      const data = await arweave.transactions.getData(txid, {
-        decode: true,
-        string: true,
-      });
-      return JSON.parse(data)
-    })
-  );
-  return packfiles
-}
-
-async function getRefsOnArweave(arweave, remoteURI) {
-  const refs = new Map();
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
-  };
-  const txids = await arweave.arql(query);
-  const tx_rows = await Promise.all(
-    txids.map(async txid => {
-      let ref = {};
-      const tx = await arweave.transactions.get(txid);
-      tx.get('tags').forEach(tag => {
-        const key = tag.get('name', { decode: true, string: true });
-        const value = tag.get('value', { decode: true, string: true });
-        if (key === 'Unix-Time') ref.unixTime = value;
-      });
-
-      const data = tx.get('data', { decode: true, string: true });
-      const decoded = JSON.parse(data);
-      ref.name = decoded.name;
-      ref.value = decoded.ref;
-
-      return ref
-    })
-  );
-
-  // descending order
-  tx_rows.sort((a, b) => {
-    Number(b.unixTime) - Number(a.unixTime);
-  });
-
-  tx_rows.forEach(ref => {
-    if (!refs.has(ref.name)) refs.set(ref.name, ref.value);
-  });
-
-  return refs
-}
-
-// @ts-check
-
-/**
- *
- * @typedef {object} FetchResult - The object returned has the following schema:
- * @property {string | null} defaultBranch - The branch that is cloned if no branch is specified
- * @property {string | null} fetchHead - The SHA-1 object id of the fetched head commit
- * @property {string | null} fetchHeadDescription - a textual description of the branch that was fetched
- * @property {Object<string, string>} [headers] - The HTTP response headers returned by the git server
- * @property {string[]} [pruned] - A list of branches that were pruned, if you provided the `prune` parameter
- *
- */
-
-/**
- * @param {object} args
- * @param {import('../models/FileSystem.js').FileSystem} args.fs
- * @param {HttpClient} args.http
- * @param {ProgressCallback} [args.onProgress]
- * @param {MessageCallback} [args.onMessage]
- * @param {AuthCallback} [args.onAuth]
- * @param {AuthFailureCallback} [args.onAuthFailure]
- * @param {AuthSuccessCallback} [args.onAuthSuccess]
- * @param {string} args.gitdir
- * @param {string|void} [args.url]
- * @param {string} [args.corsProxy]
- * @param {string} [args.ref]
- * @param {string} [args.remoteRef]
- * @param {string} [args.remote]
- * @param {boolean} [args.singleBranch = false]
- * @param {boolean} [args.tags = false]
- * @param {number} [args.depth]
- * @param {Date} [args.since]
- * @param {string[]} [args.exclude = []]
- * @param {boolean} [args.relative = false]
- * @param {Object<string, string>} [args.headers]
- * @param {boolean} [args.prune]
- * @param {boolean} [args.pruneTags]
- * @param {Arweave} [args.arweave]
- *
- * @returns {Promise<FetchResult>}
- * @see FetchResult
- */
-async function _fetchFromArweave({
-  fs,
-  http,
-  onProgress,
-  onMessage,
-  onAuth,
-  onAuthSuccess,
-  onAuthFailure,
-  gitdir,
-  ref: _ref,
-  remoteRef: _remoteRef,
-  remote: _remote,
-  url: _url,
-  corsProxy,
-  depth = null,
-  since = null,
-  exclude = [],
-  relative = false,
-  tags = false,
-  singleBranch = false,
-  headers = {},
-  prune = false,
-  pruneTags = false,
-  arweave,
-}) {
-  const ref = _ref || (await _currentBranch({ fs, gitdir, test: true }));
-  const config = await GitConfigManager.get({ fs, gitdir });
-  // Figure out what remote to use.
-  const remote =
-    _remote || (ref && (await config.get(`branch.${ref}.remote`))) || 'origin';
-  // Lookup the URL for the given remote.
-  const url = _url || (await config.get(`remote.${remote}.url`));
-  if (typeof url === 'undefined') {
-    throw new MissingParameterError('remote OR url')
-  }
-  // Figure out what remote ref to use.
-  const remoteRef =
-    _remoteRef ||
-    (ref && (await config.get(`branch.${ref}.merge`))) ||
-    _ref ||
-    'HEAD';
-
-  if (corsProxy === undefined) {
-    corsProxy = await config.get('http.corsProxy');
-  }
-
-  const remoteRefs = await getRefsOnArweave(arweave, url);
-  // For the special case of an empty repository with no refs, return null.
-  if (remoteRefs.size === 0) {
-    return {
-      defaultBranch: null,
-      fetchHead: null,
-      fetchHeadDescription: null,
-    }
-  }
-
-  // Figure out the SHA for the requested ref
-  const { oid, fullref } = GitRefManager.resolveAgainstMap({
-    ref: remoteRef,
-    map: remoteRefs,
-  });
-
-  const packfiles = await fetchPackfiles(arweave, url);
-
-  // Write packfiles
-  console.log(packfiles);
-
-  // Update local remote refs
-  // if (singleBranch) {
-  //   const refs = new Map([[fullref, oid]])
-  //   // But wait, maybe it was a symref, like 'HEAD'!
-  //   // We need to save all the refs in the symref chain (sigh).
-  //   const symrefs = new Map()
-  //   let bail = 10
-  //   let key = fullref
-  //   while (bail--) {
-  //     const value = remoteHTTP.symrefs.get(key)
-  //     if (value === undefined) break
-  //     symrefs.set(key, value)
-  //     key = value
-  //   }
-  //   // final value must not be a symref but a real ref
-  //   refs.set(key, remoteRefs.get(key))
-  //   const { pruned } = await GitRefManager.updateRemoteRefs({
-  //     fs,
-  //     gitdir,
-  //     remote,
-  //     refs,
-  //     symrefs,
-  //     tags,
-  //     prune,
-  //   })
-  //   if (prune) {
-  //     response.pruned = pruned
-  //   }
-  // } else {
-  //   const { pruned } = await GitRefManager.updateRemoteRefs({
-  //     fs,
-  //     gitdir,
-  //     remote,
-  //     refs: remoteRefs,
-  //     symrefs: remoteHTTP.symrefs,
-  //     tags,
-  //     prune,
-  //     pruneTags,
-  //   })
-  //   if (prune) {
-  //     response.pruned = pruned
-  //   }
-  // }
-  // // We need this value later for the `clone` command.
-  // response.HEAD = remoteHTTP.symrefs.get('HEAD')
-  // // AWS CodeCommit doesn't list HEAD as a symref, but we can reverse engineer it
-  // // Find the SHA of the branch called HEAD
-  // if (response.HEAD === undefined) {
-  //   const { oid } = GitRefManager.resolveAgainstMap({
-  //     ref: 'HEAD',
-  //     map: remoteRefs,
-  //   })
-  //   // Use the name of the first branch that's not called HEAD that has
-  //   // the same SHA as the branch called HEAD.
-  //   for (const [key, value] of remoteRefs.entries()) {
-  //     if (key !== 'HEAD' && value === oid) {
-  //       response.HEAD = key
-  //       break
-  //     }
-  //   }
-  // }
-  // const noun = fullref.startsWith('refs/tags') ? 'tag' : 'branch'
-  // response.FETCH_HEAD = {
-  //   oid,
-  //   description: `${noun} '${abbreviateRef(fullref)}' of ${url}`,
-  // }
-
-  // if (onProgress || onMessage) {
-  //   const lines = splitLines(response.progress)
-  //   forAwait(lines, async line => {
-  //     if (onMessage) await onMessage(line)
-  //     if (onProgress) {
-  //       const matches = line.match(/([^:]*).*\((\d+?)\/(\d+?)\)/)
-  //       if (matches) {
-  //         await onProgress({
-  //           phase: matches[1].trim(),
-  //           loaded: parseInt(matches[2], 10),
-  //           total: parseInt(matches[3], 10),
-  //         })
-  //       }
-  //     }
-  //   })
-  // }
-  // const packfile = Buffer.from(await collect(response.packfile))
-  // const packfileSha = packfile.slice(-20).toString('hex')
-  // const res = {
-  //   defaultBranch: response.HEAD,
-  //   fetchHead: response.FETCH_HEAD.oid,
-  //   fetchHeadDescription: response.FETCH_HEAD.description,
-  // }
-  // if (response.headers) {
-  //   res.headers = response.headers
-  // }
-  // if (prune) {
-  //   res.pruned = response.pruned
-  // }
-  // // This is a quick fix for the empty .git/objects/pack/pack-.pack file error,
-  // // which due to the way `git-list-pack` works causes the program to hang when it tries to read it.
-  // // TODO: Longer term, we should actually:
-  // // a) NOT concatenate the entire packfile into memory (line 78),
-  // // b) compute the SHA of the stream except for the last 20 bytes, using the same library used in push.js, and
-  // // c) compare the computed SHA with the last 20 bytes of the stream before saving to disk, and throwing a "packfile got corrupted during download" error if the SHA doesn't match.
-  // if (packfileSha !== '' && !emptyPackfile(packfile)) {
-  //   res.packfile = `objects/pack/pack-${packfileSha}.pack`
-  //   const fullpath = join(gitdir, res.packfile)
-  //   await fs.write(fullpath, packfile)
-  //   const getExternalRefDelta = oid => readObject({ fs, gitdir, oid })
-  //   const idx = await GitPackIndex.fromPack({
-  //     pack: packfile,
-  //     getExternalRefDelta,
-  //     onProgress,
-  //   })
-  //   await fs.write(fullpath.replace(/\.pack$/, '.idx'), await idx.toBuffer())
-  // }
-  // return res
 }
 
 // @ts-check
@@ -14469,6 +14520,7 @@ var index = {
   branch,
   checkout,
   clone,
+  cloneFromArweave,
   commit,
   getConfig,
   getConfigAll,
@@ -14528,4 +14580,4 @@ var index = {
 };
 
 export default index;
-export { Errors, STAGE, TREE, WORKDIR, add, addArweaveRemote, addNote, addRemote, annotatedTag, branch, checkout, clone, commit, currentBranch, deleteBranch, deleteRef, deleteRemote, deleteTag, expandOid, expandRef, fastForward, fetch, fetchFromArweave, findMergeBase, findRoot, getConfig, getConfigAll, getRemoteInfo, getRemoteInfo2, hashBlob, indexPack, init, isDescendent, listBranches, listFiles, listNotes, listRemotes, listServerRefs, listTags, log, merge, packObjects, pull, push, pushToArweave, readBlob, readCommit, readNote, readObject, readTag, readTree, remove, removeNote, renameBranch, resetIndex, resolveRef, setConfig, status, statusMatrix, tag, version, walk, writeBlob, writeCommit, writeObject, writeRef, writeTag, writeTree };
+export { Errors, STAGE, TREE, WORKDIR, add, addNote, addRemote, annotatedTag, branch, checkout, clone, cloneFromArweave, commit, currentBranch, deleteBranch, deleteRef, deleteRemote, deleteTag, expandOid, expandRef, fastForward, fetch, fetchFromArweave, findMergeBase, findRoot, getConfig, getConfigAll, getRemoteInfo, getRemoteInfo2, hashBlob, indexPack, init, isDescendent, listBranches, listFiles, listNotes, listRemotes, listServerRefs, listTags, log, merge, packObjects, pull, push, pushToArweave, readBlob, readCommit, readNote, readObject, readTag, readTree, remove, removeNote, renameBranch, resetIndex, resolveRef, setConfig, status, statusMatrix, tag, version, walk, writeBlob, writeCommit, writeObject, writeRef, writeTag, writeTree };

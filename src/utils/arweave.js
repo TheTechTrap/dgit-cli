@@ -12,7 +12,7 @@ const repoQuery = remoteURI => {
       expr1: {
         op: 'equals',
         expr1: 'App-Name',
-        expr2: 'argit',
+        expr2: 'test-repo',
       },
       expr2: {
         op: 'equals',
@@ -36,7 +36,7 @@ function addTransactionTags(tx, repo, txType) {
   tx.addTag('Repo', repo)
   tx.addTag('Type', txType)
   tx.addTag('Content-Type', 'application/json')
-  tx.addTag('App-Name', 'argit')
+  tx.addTag('App-Name', 'test-repo')
   tx.addTag('version', '0.0.1')
   tx.addTag('Unix-Time', Math.round(new Date().getTime() / 1000)) // Add Unix timestamp
   return tx
@@ -97,12 +97,22 @@ export async function pushPackfile(
   packfile
 ) {
   const { repoName } = parseArgitRemoteURI(remoteURI)
-  const data = JSON.stringify({ oldoid, oid, packfile })
-  let tx = await arweave.createTransaction({ data }, wallet)
+
+  let tx = await arweave.createTransaction({ data: packfile.packfile }, wallet)
   tx = addTransactionTags(tx, repoName, 'send-pack')
+  tx.addTag('oid', oid)
+  tx.addTag('oldoid', oldoid)
+  tx.addTag('filename', packfile.filename)
 
   await arweave.transactions.sign(tx, wallet)
-  arweave.transactions.post(tx) // Post transaction
+  let uploader = await arweave.transactions.getUploader(tx)
+
+  while (!uploader.isComplete) {
+    await uploader.uploadChunk()
+    console.log(
+      `${uploader.pctComplete}% complete, ${uploader.uploadedChunks}/${uploader.totalChunks}`
+    )
+  }
 }
 
 export async function fetchPackfiles(arweave, remoteURI) {
@@ -114,11 +124,15 @@ export async function fetchPackfiles(arweave, remoteURI) {
   const txids = await arweave.arql(query)
   const packfiles = await Promise.all(
     txids.map(async txid => {
-      const data = await arweave.transactions.getData(txid, {
-        decode: true,
-        string: true,
+      const tx = await arweave.transactions.get(txid)
+      let filename = ''
+      tx.get('tags').forEach(tag => {
+        const key = tag.get('name', { decode: true, string: true })
+        const value = tag.get('value', { decode: true, string: true })
+        if (key === 'filename') filename = value
       })
-      return JSON.parse(data)
+      const data = tx.get('data', { decode: true })
+      return { data, filename }
     })
   )
   return packfiles

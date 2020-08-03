@@ -7,6 +7,17 @@ const git = require('.')
 
 const http = require('./http/node')
 
+const Arweave = require('arweave/node')
+const arweave = Arweave.init({
+  host: 'arweave.net',
+  port: 443,
+  protocol: 'https',
+})
+
+const arweaveWalletPath = process.env.ARWEAVE_WALLET_PATH
+const rawdata = fs.readFileSync(arweaveWalletPath)
+const wallet = JSON.parse(rawdata)
+
 // This really isn't much of a CLI. It's mostly for testing.
 // But it's very versatile and works surprisingly well.
 
@@ -22,6 +33,8 @@ minimisted(async function({ _: [command, ...args], ...opts }) {
           headers: {
             'User-Agent': `git/isogit-${git.version()}`,
           },
+          arweave,
+          wallet,
         },
         opts
       )

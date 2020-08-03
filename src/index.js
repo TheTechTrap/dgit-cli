@@ -6,11 +6,11 @@ import { WORKDIR } from './api/WORKDIR.js'
 import { add } from './api/add.js'
 import { addNote } from './api/addNote.js'
 import { addRemote } from './api/addRemote.js'
-import { addArweaveRemote } from './api/addArweaveRemote.js'
 import { annotatedTag } from './api/annotatedTag.js'
 import { branch } from './api/branch.js'
 import { checkout } from './api/checkout.js'
 import { clone } from './api/clone.js'
+import { cloneFromArweave } from './api/cloneFromArweave.js'
 import { commit } from './api/commit.js'
 import { currentBranch } from './api/currentBranch.js'
 import { deleteBranch } from './api/deleteBranch.js'
@@ -78,11 +78,11 @@ export {
   add,
   addNote,
   addRemote,
-  addArweaveRemote,
   annotatedTag,
   branch,
   checkout,
   clone,
+  cloneFromArweave,
   commit,
   getConfig,
   getConfigAll,
@@ -154,6 +154,7 @@ export default {
   branch,
   checkout,
   clone,
+  cloneFromArweave,
   commit,
   getConfig,
   getConfigAll,

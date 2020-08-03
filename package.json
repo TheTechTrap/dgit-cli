@@ -8,7 +8,7 @@
   "module": "./index.js",
   "unpkg": "./index.umd.min.js",
   "bin": {
-    "isogit": "./cli.js"
+    "argit": "./cli.js"
   },
   "sideEffects": false,
   "engines": {
@@ -51,6 +51,7 @@
     "size_report.html"
   ],
   "dependencies": {
+    "arweave": "^1.8.0",
     "async-lock": "^1.1.0",
     "clean-git-ref": "^2.0.1",
     "crc-32": "^1.2.0",

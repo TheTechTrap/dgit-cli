@@ -38,7 +38,8 @@ import { getRefsOnArweave, fetchPackfiles } from '../utils/arweave.js'
 /**
  * @param {object} args
  * @param {import('../models/FileSystem.js').FileSystem} args.fs
- * @param {HttpClient} args.http
+ * @param {import { fetch } from '../../index.d';
+HttpClient} args.http
  * @param {ProgressCallback} [args.onProgress]
  * @param {MessageCallback} [args.onMessage]
  * @param {AuthCallback} [args.onAuth]
@@ -104,7 +105,7 @@ export async function _fetchFromArweave({
     _remoteRef ||
     (ref && (await config.get(`branch.${ref}.merge`))) ||
     _ref ||
-    'HEAD'
+    'master'
 
   if (corsProxy === undefined) {
     corsProxy = await config.get('http.corsProxy')
@@ -126,124 +127,40 @@ export async function _fetchFromArweave({
     map: remoteRefs,
   })
 
+  const symrefs = new Map()
+  await GitRefManager.updateRemoteRefs({
+    fs,
+    gitdir,
+    remote,
+    refs: remoteRefs,
+    symrefs,
+    tags,
+    prune,
+  })
+
   const packfiles = await fetchPackfiles(arweave, url)
 
   // Write packfiles
-  console.log(packfiles)
+  await Promise.all(
+    packfiles.map(async packfile => {
+      const packfilePath = `objects/pack/${packfile.filename}`
+      const fullpath = join(gitdir, packfilePath)
+      const buf = Buffer.from(packfile.data)
+      await fs.write(fullpath, buf)
+      const getExternalRefDelta = oid => readObject({ fs, gitdir, oid })
+      const idx = await GitPackIndex.fromPack({
+        pack: buf,
+        getExternalRefDelta,
+        onProgress,
+      })
+      await fs.write(fullpath.replace(/\.pack$/, '.idx'), await idx.toBuffer())
+    })
+  )
 
-  // Update local remote refs
-  // if (singleBranch) {
-  //   const refs = new Map([[fullref, oid]])
-  //   // But wait, maybe it was a symref, like 'HEAD'!
-  //   // We need to save all the refs in the symref chain (sigh).
-  //   const symrefs = new Map()
-  //   let bail = 10
-  //   let key = fullref
-  //   while (bail--) {
-  //     const value = remoteHTTP.symrefs.get(key)
-  //     if (value === undefined) break
-  //     symrefs.set(key, value)
-  //     key = value
-  //   }
-  //   // final value must not be a symref but a real ref
-  //   refs.set(key, remoteRefs.get(key))
-  //   const { pruned } = await GitRefManager.updateRemoteRefs({
-  //     fs,
-  //     gitdir,
-  //     remote,
-  //     refs,
-  //     symrefs,
-  //     tags,
-  //     prune,
-  //   })
-  //   if (prune) {
-  //     response.pruned = pruned
-  //   }
-  // } else {
-  //   const { pruned } = await GitRefManager.updateRemoteRefs({
-  //     fs,
-  //     gitdir,
-  //     remote,
-  //     refs: remoteRefs,
-  //     symrefs: remoteHTTP.symrefs,
-  //     tags,
-  //     prune,
-  //     pruneTags,
-  //   })
-  //   if (prune) {
-  //     response.pruned = pruned
-  //   }
-  // }
-  // // We need this value later for the `clone` command.
-  // response.HEAD = remoteHTTP.symrefs.get('HEAD')
-  // // AWS CodeCommit doesn't list HEAD as a symref, but we can reverse engineer it
-  // // Find the SHA of the branch called HEAD
-  // if (response.HEAD === undefined) {
-  //   const { oid } = GitRefManager.resolveAgainstMap({
-  //     ref: 'HEAD',
-  //     map: remoteRefs,
-  //   })
-  //   // Use the name of the first branch that's not called HEAD that has
-  //   // the same SHA as the branch called HEAD.
-  //   for (const [key, value] of remoteRefs.entries()) {
-  //     if (key !== 'HEAD' && value === oid) {
-  //       response.HEAD = key
-  //       break
-  //     }
-  //   }
-  // }
-  // const noun = fullref.startsWith('refs/tags') ? 'tag' : 'branch'
-  // response.FETCH_HEAD = {
-  //   oid,
-  //   description: `${noun} '${abbreviateRef(fullref)}' of ${url}`,
-  // }
-
-  // if (onProgress || onMessage) {
-  //   const lines = splitLines(response.progress)
-  //   forAwait(lines, async line => {
-  //     if (onMessage) await onMessage(line)
-  //     if (onProgress) {
-  //       const matches = line.match(/([^:]*).*\((\d+?)\/(\d+?)\)/)
-  //       if (matches) {
-  //         await onProgress({
-  //           phase: matches[1].trim(),
-  //           loaded: parseInt(matches[2], 10),
-  //           total: parseInt(matches[3], 10),
-  //         })
-  //       }
-  //     }
-  //   })
-  // }
-  // const packfile = Buffer.from(await collect(response.packfile))
-  // const packfileSha = packfile.slice(-20).toString('hex')
-  // const res = {
-  //   defaultBranch: response.HEAD,
-  //   fetchHead: response.FETCH_HEAD.oid,
-  //   fetchHeadDescription: response.FETCH_HEAD.description,
-  // }
-  // if (response.headers) {
-  //   res.headers = response.headers
-  // }
-  // if (prune) {
-  //   res.pruned = response.pruned
-  // }
-  // // This is a quick fix for the empty .git/objects/pack/pack-.pack file error,
-  // // which due to the way `git-list-pack` works causes the program to hang when it tries to read it.
-  // // TODO: Longer term, we should actually:
-  // // a) NOT concatenate the entire packfile into memory (line 78),
-  // // b) compute the SHA of the stream except for the last 20 bytes, using the same library used in push.js, and
-  // // c) compare the computed SHA with the last 20 bytes of the stream before saving to disk, and throwing a "packfile got corrupted during download" error if the SHA doesn't match.
-  // if (packfileSha !== '' && !emptyPackfile(packfile)) {
-  //   res.packfile = `objects/pack/pack-${packfileSha}.pack`
-  //   const fullpath = join(gitdir, res.packfile)
-  //   await fs.write(fullpath, packfile)
-  //   const getExternalRefDelta = oid => readObject({ fs, gitdir, oid })
-  //   const idx = await GitPackIndex.fromPack({
-  //     pack: packfile,
-  //     getExternalRefDelta,
-  //     onProgress,
-  //   })
-  //   await fs.write(fullpath.replace(/\.pack$/, '.idx'), await idx.toBuffer())
-  // }
-  // return res
+  const noun = fullref.startsWith('refs/tags') ? 'tag' : 'branch'
+  return {
+    defaultBranch: fullref,
+    fetchHead: oid,
+    fetchHeadDescription: `${noun} '${abbreviateRef(fullref)}' of ${url}`,
+  }
 }
