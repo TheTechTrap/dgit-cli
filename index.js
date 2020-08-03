@@ -7614,7 +7614,7 @@ const repoQuery = remoteURI => {
       expr1: {
         op: 'equals',
         expr1: 'App-Name',
-        expr2: 'test-repo',
+        expr2: 'test-repo1',
       },
       expr2: {
         op: 'equals',
@@ -7638,7 +7638,7 @@ function addTransactionTags(tx, repo, txType) {
   tx.addTag('Repo', repo);
   tx.addTag('Type', txType);
   tx.addTag('Content-Type', 'application/json');
-  tx.addTag('App-Name', 'test-repo');
+  tx.addTag('App-Name', 'test-repo1');
   tx.addTag('version', '0.0.1');
   tx.addTag('Unix-Time', Math.round(new Date().getTime() / 1000)); // Add Unix timestamp
   return tx
@@ -7646,7 +7646,7 @@ function addTransactionTags(tx, repo, txType) {
 
 async function updateRef(arweave, wallet, remoteURI, name, ref) {
   const { repoName } = parseArgitRemoteURI(remoteURI);
-  let tx = await arweave.createTransaction({ data: name }, wallet);
+  let tx = await arweave.createTransaction({ data: ref }, wallet);
   tx = addTransactionTags(tx, repoName, 'update-ref');
   tx.addTag('ref', name);
 
