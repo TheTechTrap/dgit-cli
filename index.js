@@ -7646,9 +7646,9 @@ function addTransactionTags(tx, repo, txType) {
 
 async function updateRef(arweave, wallet, remoteURI, name, ref) {
   const { repoName } = parseArgitRemoteURI(remoteURI);
-  const data = JSON.stringify({ name, ref });
-  let tx = await arweave.createTransaction({ data }, wallet);
+  let tx = await arweave.createTransaction({ data: name }, wallet);
   tx = addTransactionTags(tx, repoName, 'update-ref');
+  tx.addTag('ref', name);
 
   await arweave.transactions.sign(tx, wallet); // Sign transaction
   arweave.transactions.post(tx); // Post transaction
@@ -7658,7 +7658,11 @@ async function getRef(arweave, remoteURI, name) {
   const query = {
     op: 'and',
     expr1: repoQuery(remoteURI),
-    expr2: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
+    expr2: {
+      op: 'and',
+      expr1: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
+      expr2: { op: 'equals', expr1: 'ref', expr2: name },
+    },
   };
   const txids = await arweave.arql(query);
   const tx_rows = await Promise.all(
@@ -7671,24 +7675,19 @@ async function getRef(arweave, remoteURI, name) {
         if (key === 'Unix-Time') tx_row.unixTime = value;
       });
 
-      const data = tx.get('data', { decode: true, string: true });
-      const decoded = JSON.parse(data);
-      tx_row.name = decoded.name;
-      tx_row.value = decoded.ref;
+      tx_row.oid = tx.get('data', { decode: true, string: true });
 
       return tx_row
     })
   );
 
-  const refs = tx_rows.filter(tx_row => tx_row.name === name);
-  console.log('refs', refs);
-  if (refs.length === 0) return '0000000000000000000000000000000000000000'
+  if (tx_rows.length === 0) return '0000000000000000000000000000000000000000'
 
   // descending order
   tx_rows.sort((a, b) => {
     Number(b.unixTime) - Number(a.unixTime);
   });
-  return tx_rows[0].ref
+  return tx_rows[0].oid
 }
 
 async function pushPackfile(
@@ -7757,12 +7756,10 @@ async function getRefsOnArweave(arweave, remoteURI) {
         const key = tag.get('name', { decode: true, string: true });
         const value = tag.get('value', { decode: true, string: true });
         if (key === 'Unix-Time') ref.unixTime = value;
+        else if (key === 'ref') ref.name = value;
       });
 
-      const data = tx.get('data', { decode: true, string: true });
-      const decoded = JSON.parse(data);
-      ref.name = decoded.name;
-      ref.value = decoded.ref;
+      ref.oid = tx.get('data', { decode: true, string: true });
 
       return ref
     })
@@ -7774,7 +7771,7 @@ async function getRefsOnArweave(arweave, remoteURI) {
   });
 
   tx_rows.forEach(ref => {
-    if (!refs.has(ref.name)) refs.set(ref.name, ref.value);
+    if (!refs.has(ref.name)) refs.set(ref.name, ref.oid);
   });
 
   return refs
