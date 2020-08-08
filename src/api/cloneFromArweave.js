@@ -74,7 +74,7 @@ export async function cloneFromArweave({
 }) {
   try {
     assertParameter('fs', fs)
-    assertParameter('http', http)
+    // assertParameter('http', http)
     assertParameter('gitdir', gitdir)
     if (!noCheckout) {
       assertParameter('dir', dir)
