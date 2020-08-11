@@ -24,7 +24,7 @@ const repoQuery = remoteURI => {
   }
 }
 
-function parseArgitRemoteURI(remoteURI) {
+export function parseArgitRemoteURI(remoteURI) {
   const matchGroups = remoteURI.match(argitRemoteURIRegex)
   const repoOwnerAddress = matchGroups[1]
   const repoName = matchGroups[2]
