@@ -7639,7 +7639,7 @@ function addTransactionTags(tx, repo, txType) {
   tx.addTag('Repo', repo);
   tx.addTag('Type', txType);
   tx.addTag('Content-Type', 'application/json');
-  tx.addTag('App-Name', 'test-repo1');
+  tx.addTag('App-Name', 'dgit');
   tx.addTag('version', '0.0.1');
   tx.addTag('Unix-Time', Math.round(new Date().getTime() / 1000)); // Add Unix timestamp
   return tx
@@ -7725,7 +7725,7 @@ async function pushPackfile(
     { target: holder, quantity: arweave.ar.arToWinston('0.01') },
     wallet
   );
-  pstTx.addTag('App-Name', 'test-repo1');
+  pstTx.addTag('App-Name', 'dgit');
   pstTx.addTag('version', '0.0.1');
 
   await arweave.transactions.sign(pstTx, wallet);
