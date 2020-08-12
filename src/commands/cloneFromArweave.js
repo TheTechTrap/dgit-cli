@@ -7,7 +7,7 @@ import { _fetchFromArweave } from '../commands/fetchFromArweave.js'
 import { _init } from '../commands/init.js'
 import { GitConfigManager } from '../managers/GitConfigManager.js'
 import { parseArgitRemoteURI } from '../utils/arweave'
-import {join} from '../utils/join'
+import { join } from '../utils/join'
 /**
  * @param {object} args
  * @param {import('../models/FileSystem.js').FileSystem} args.fs
@@ -63,8 +63,8 @@ export async function _cloneFromArweave({
   arweave,
 }) {
   const { repoName } = parseArgitRemoteURI(url)
-  dir = dir || repoName
-  gitdir = join(dir,'.git')]
+  dir = dir !== '.' ? dir : repoName
+  gitdir = join(dir, '.git')
   await _init({ fs, gitdir })
   await _addRemote({ fs, gitdir, remote, url, force: false })
   if (corsProxy) {

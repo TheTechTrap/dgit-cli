@@ -60,12 +60,14 @@ function generateArgs(command, args, opts) {
       result.message = opts['m']
     }
   } else if (command === 'clone') {
-    console.log('er')
+    resCommand = 'cloneFromArweave'
 
-    if (args.length == 1) {
+    if (args.length >= 1) {
       result.url = args[0]
-      resCommand = 'cloneFromArweave'
-      delete result.dir
+    }
+
+    if (args.length == 2) {
+      result.dir = args[1]
     }
   } else if (command == 'config') {
     if (args.length > 1) {

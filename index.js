@@ -7921,7 +7921,6 @@ async function _fetchFromArweave({
 }
 
 // @ts-check
-
 /**
  * @param {object} args
  * @param {import('../models/FileSystem.js').FileSystem} args.fs
@@ -7976,6 +7975,9 @@ async function _cloneFromArweave({
   headers,
   arweave,
 }) {
+  const { repoName } = parseArgitRemoteURI(url);
+  dir = dir !== '.' ? dir : repoName;
+  gitdir = join(dir, '.git');
   await _init({ fs, gitdir });
   await _addRemote({ fs, gitdir, remote, url, force: false });
   if (corsProxy) {
