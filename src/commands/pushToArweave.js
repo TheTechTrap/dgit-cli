@@ -156,7 +156,6 @@ export async function _pushToArweave({
       for (const oid of mergebase) finish.push(oid)
       // thinpack
       skipObjects = await listObjects({ fs, gitdir, oids: mergebase })
-      console.log('skipped ', skipObjects)
     }
 
     // If remote does not have the commit, figure out the objects to send

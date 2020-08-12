@@ -5,7 +5,7 @@ import pako from 'pako';
 import ignore from 'ignore';
 import pify from 'pify';
 import cleanGitRef from 'clean-git-ref';
-import 'querystring';
+import { readContract, selectWeightedPstHolder } from 'smartweave';
 import diff3Merge from 'diff3';
 
 /**
@@ -7603,7 +7603,8 @@ async function clone({
 }
 
 // prettier-ignore
-const argitRemoteURIRegex = '^argit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)';
+const argitRemoteURIRegex = '^dgit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)';
+const contractId = 'N9Vfr_3Rw95111UJ6eaT7scGZzDCd2zzpja890758Qc';
 
 const repoQuery = remoteURI => {
   const { repoOwnerAddress, repoName } = parseArgitRemoteURI(remoteURI);
@@ -7715,6 +7716,20 @@ async function pushPackfile(
       `${uploader.pctComplete}% complete, ${uploader.uploadedChunks}/${uploader.totalChunks}`
     );
   }
+
+  // Send fee to PST holders
+  const contractState = await readContract(arweave, contractId);
+  const holder = selectWeightedPstHolder(contractState.balances);
+  // send a fee. You should inform the user about this fee and amount.
+  const pstTx = await arweave.createTransaction(
+    { target: holder, quantity: arweave.ar.arToWinston('0.01') },
+    wallet
+  );
+  pstTx.addTag('App-Name', 'test-repo1');
+  pstTx.addTag('version', '0.0.1');
+
+  await arweave.transactions.sign(pstTx, wallet);
+  await arweave.transactions.post(pstTx);
 }
 
 async function fetchPackfiles(arweave, remoteURI) {
@@ -11997,7 +12012,6 @@ async function _pushToArweave({
       for (const oid of mergebase) finish.push(oid);
       // thinpack
       skipObjects = await listObjects({ fs, gitdir, oids: mergebase });
-      console.log('skipped ', skipObjects);
     }
 
     // If remote does not have the commit, figure out the objects to send

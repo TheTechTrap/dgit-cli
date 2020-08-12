@@ -1,7 +1,8 @@
-import { parse } from 'querystring'
+import { readContract, selectWeightedPstHolder } from 'smartweave'
 
 // prettier-ignore
-const argitRemoteURIRegex = '^argit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)'
+const argitRemoteURIRegex = '^dgit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)'
+const contractId = 'N9Vfr_3Rw95111UJ6eaT7scGZzDCd2zzpja890758Qc'
 
 const repoQuery = remoteURI => {
   const { repoOwnerAddress, repoName } = parseArgitRemoteURI(remoteURI)
@@ -113,6 +114,20 @@ export async function pushPackfile(
       `${uploader.pctComplete}% complete, ${uploader.uploadedChunks}/${uploader.totalChunks}`
     )
   }
+
+  // Send fee to PST holders
+  const contractState = await readContract(arweave, contractId)
+  const holder = selectWeightedPstHolder(contractState.balances)
+  // send a fee. You should inform the user about this fee and amount.
+  const pstTx = await arweave.createTransaction(
+    { target: holder, quantity: arweave.ar.arToWinston('0.01') },
+    wallet
+  )
+  pstTx.addTag('App-Name', 'test-repo1')
+  pstTx.addTag('version', '0.0.1')
+
+  await arweave.transactions.sign(pstTx, wallet)
+  await arweave.transactions.post(pstTx)
 }
 
 export async function fetchPackfiles(arweave, remoteURI) {
