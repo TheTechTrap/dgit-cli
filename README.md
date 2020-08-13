@@ -1,8 +1,15 @@
 # dgit-cli
 
+This is the dgit cli client to interact with [dgit.sh](https://dgit.sh) or [permaweb-link](https://arweave.net/sCdfo1bUwbWZSffwxkhugbD3uRWBztdPwKFaM_2vmtQ
+)
+
+PST Fee of 0.01 AR is only applicable on dgit push
+
+
 ## Steps to Build
 
 - `npm install`
+- `npm run build`
 - `npm link`
 
 ## Commands
@@ -20,3 +27,4 @@
 - `dgit log`
 
 _Built using isomorphic-git_
+
