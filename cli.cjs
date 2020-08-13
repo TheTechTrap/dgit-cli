@@ -107,9 +107,7 @@ function generateArgs(command, args, opts) {
 
 minimisted(async function({ _: [command, ...args], ...opts }) {
   if (COMMAND_LIST.includes(command)) {
-    console.log(args, opts, command)
     const { newCommand, genOpts } = generateArgs(command, args, opts)
-    console.log(newCommand, genOpts)
     try {
       const result = await git[newCommand](
         Object.assign(
