@@ -1,7 +1,7 @@
 {
-  "name": "isomorphic-git",
-  "version": "0.0.0-development",
-  "description": "A pure JavaScript reimplementation of git for node and browsers",
+  "name": "@thetechtrap/dgit",
+  "version": "0.0.1",
+  "description": "dgit cli for permanent versioning",
   "type": "module",
   "typings": "./index.d.ts",
   "main": "./index.cjs",
@@ -26,18 +26,18 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/isomorphic-git/isomorphic-git.git"
+    "url": "https://github.com/TheTechTrap/dgit-cli.git"
   },
   "keywords": [
     "git",
     "isomorphic"
   ],
-  "author": "William Hilton <wmhilton@gmail.com>",
+  "author": "T<wmhilton@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/isomorphic-git/isomorphic-git/issues"
+    "url": "https://github.com/TheTechTrap/dgit-cli/issues"
   },
-  "homepage": "https://isomorphic-git.org/",
+  "homepage": "https://dgit.sh/",
   "files": [
     "cli.cjs",
     "browser-tests.json",

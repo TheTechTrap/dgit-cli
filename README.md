@@ -1,10 +1,10 @@
 # dgit-cli
 
-This is the dgit cli client to interact with [dgit.sh](https://dgit.sh) or [permaweb-link](https://arweave.net/sCdfo1bUwbWZSffwxkhugbD3uRWBztdPwKFaM_2vmtQ
-)
+To use it as a global cli install using `npm install -g @thetechtrap/dgit`
+
+This is the dgit cli client to interact with [dgit.sh](https://dgit.sh) or [permaweb-link](https://arweave.net/sCdfo1bUwbWZSffwxkhugbD3uRWBztdPwKFaM_2vmtQ)
 
 PST Fee of 0.01 AR is only applicable on dgit push
-
 
 ## Steps to Build
 
@@ -27,4 +27,3 @@ PST Fee of 0.01 AR is only applicable on dgit push
 - `dgit log`
 
 _Built using isomorphic-git_
-

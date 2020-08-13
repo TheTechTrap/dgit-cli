@@ -9,7 +9,6 @@ const http = require('./http/node')
 
 const Arweave = require('arweave/node')
 const { assert } = require('console')
-const { registerPrompt } = require('inquirer')
 const { readJsonConfigFile } = require('typescript')
 const arweave = Arweave.init({
   host: 'arweave.net',
@@ -18,6 +17,10 @@ const arweave = Arweave.init({
 })
 
 const arweaveWalletPath = process.env.ARWEAVE_WALLET_PATH
+if (!arweaveWalletPath) {
+  process.stderr.write('Missing ARWEAVE_WALLET_PATH env variable\n')
+  process.exit(1)
+}
 const rawdata = fs.readFileSync(arweaveWalletPath)
 const wallet = JSON.parse(rawdata)
 const COMMAND_LIST = [
@@ -137,7 +140,6 @@ minimisted(async function({ _: [command, ...args], ...opts }) {
       }
     } catch (err) {
       process.stderr.write(err.message + '\n')
-      console.log(err)
       process.exit(1)
     }
   } else {

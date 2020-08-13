@@ -6694,9 +6694,9 @@ function filterCapabilities(server, client) {
 }
 
 const pkg = {
-  name: 'isomorphic-git',
-  version: '0.0.0-development',
-  agent: 'git/isomorphic-git@0.0.0-development',
+  name: '@thetechtrap/dgit',
+  version: '0.0.1',
+  agent: 'git/@thetechtrap/dgit@0.0.1',
 };
 
 class FIFO {
