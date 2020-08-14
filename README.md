@@ -2,7 +2,7 @@
 
 To use it as a global cli install using `npm install -g @thetechtrap/dgit`
 
-This is the dgit cli client to interact with [dgit.sh](https://dgit.sh) or [permaweb-link](https://arweave.net/sCdfo1bUwbWZSffwxkhugbD3uRWBztdPwKFaM_2vmtQ)
+This is the dgit cli client to interact with [dgit.sh](https://dgit.sh) or [permaweb-link](https://arweave.net/CvDtHEdfFLjceZFS9wO9russvfBsAxYZGDl42j8Yey8)
 
 PST Fee of 0.01 AR is only applicable on dgit push
 
