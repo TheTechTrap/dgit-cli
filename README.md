@@ -26,4 +26,5 @@ PST Fee of 0.01 AR is only applicable on dgit push
 - `dgit clone <dgit://address/repo_name>`
 - `dgit log`
 
-_Built using isomorphic-git_
+## Credits
+We are thankful to [isomorphic-git](https://github.com/isomorphic-git/isomorphic-git)
