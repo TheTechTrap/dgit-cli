@@ -74,7 +74,10 @@ export async function getRef(arweave, remoteURI, name) {
         if (key === 'Unix-Time') tx_row.unixTime = value
       })
 
-      tx_row.oid = tx.get('data', { decode: true, string: true })
+      tx_row.oid = await arweave.transactions.getData(txid, {
+        decode: true,
+        string: true,
+      })
 
       return tx_row
     })
@@ -146,7 +149,7 @@ export async function fetchPackfiles(arweave, remoteURI) {
         const value = tag.get('value', { decode: true, string: true })
         if (key === 'filename') filename = value
       })
-      const data = tx.get('data', { decode: true })
+      const data = await arweave.transactions.getData(txid, { decode: true })
       return { data, filename }
     })
   )
@@ -172,7 +175,10 @@ export async function getRefsOnArweave(arweave, remoteURI) {
         else if (key === 'ref') ref.name = value
       })
 
-      ref.oid = tx.get('data', { decode: true, string: true })
+      ref.oid = await arweave.transactions.getData(txid, {
+        decode: true,
+        string: true,
+      })
 
       return ref
     })
