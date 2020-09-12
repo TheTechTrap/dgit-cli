@@ -7798,6 +7798,16 @@ async function getRefsOnArweave(arweave, remoteURI) {
   return refs
 }
 
+var Arweave = /*#__PURE__*/Object.freeze({
+  __proto__: null,
+  parseArgitRemoteURI: parseArgitRemoteURI,
+  updateRef: updateRef,
+  getRef: getRef,
+  pushPackfile: pushPackfile,
+  fetchPackfiles: fetchPackfiles,
+  getRefsOnArweave: getRefsOnArweave
+});
+
 // @ts-check
 
 /**
@@ -7915,7 +7925,7 @@ async function _fetchFromArweave({
   });
 
   const packfiles = await fetchPackfiles(arweave, url);
-
+  console.log(packfiles);
   // Write packfiles
   await Promise.all(
     packfiles.map(async packfile => {
@@ -14529,6 +14539,7 @@ async function writeTree({ fs, dir, gitdir = join(dir, '.git'), tree }) {
 // default export
 var index = {
   Errors,
+  Arweave,
   STAGE,
   TREE,
   WORKDIR,
@@ -14599,4 +14610,4 @@ var index = {
 };
 
 export default index;
-export { Errors, STAGE, TREE, WORKDIR, add, addNote, addRemote, annotatedTag, branch, checkout, clone, cloneFromArweave, commit, currentBranch, deleteBranch, deleteRef, deleteRemote, deleteTag, expandOid, expandRef, fastForward, fetch, fetchFromArweave, findMergeBase, findRoot, getConfig, getConfigAll, getRemoteInfo, getRemoteInfo2, hashBlob, indexPack, init, isDescendent, listBranches, listFiles, listNotes, listRemotes, listServerRefs, listTags, log, merge, packObjects, pull, push, pushToArweave, readBlob, readCommit, readNote, readObject, readTag, readTree, remove, removeNote, renameBranch, resetIndex, resolveRef, setConfig, status, statusMatrix, tag, version, walk, writeBlob, writeCommit, writeObject, writeRef, writeTag, writeTree };
+export { Arweave, Errors, STAGE, TREE, WORKDIR, add, addNote, addRemote, annotatedTag, branch, checkout, clone, cloneFromArweave, commit, currentBranch, deleteBranch, deleteRef, deleteRemote, deleteTag, expandOid, expandRef, fastForward, fetch, fetchFromArweave, findMergeBase, findRoot, getConfig, getConfigAll, getRemoteInfo, getRemoteInfo2, hashBlob, indexPack, init, isDescendent, listBranches, listFiles, listNotes, listRemotes, listServerRefs, listTags, log, merge, packObjects, pull, push, pushToArweave, readBlob, readCommit, readNote, readObject, readTag, readTree, remove, removeNote, renameBranch, resetIndex, resolveRef, setConfig, status, statusMatrix, tag, version, walk, writeBlob, writeCommit, writeObject, writeRef, writeTag, writeTree };

@@ -68,10 +68,12 @@ import { writeRef } from './api/writeRef.js'
 import { writeTag } from './api/writeTag.js'
 import { writeTree } from './api/writeTree.js'
 import * as Errors from './errors/index.js'
+import * as Arweave from './utils/arweave.js'
 
 // named exports
 export {
   Errors,
+  Arweave,
   STAGE,
   TREE,
   WORKDIR,
@@ -144,6 +146,7 @@ export {
 // default export
 export default {
   Errors,
+  Arweave,
   STAGE,
   TREE,
   WORKDIR,
