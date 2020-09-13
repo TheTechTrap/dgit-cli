@@ -7925,7 +7925,7 @@ async function _fetchFromArweave({
   });
 
   const packfiles = await fetchPackfiles(arweave, url);
-  console.log(packfiles);
+
   // Write packfiles
   await Promise.all(
     packfiles.map(async packfile => {

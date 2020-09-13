@@ -1,4 +1,4 @@
-import { readContract, selectWeightedPstHolder } from 'smartweave'
+import * as smartweave from 'smartweave'
 
 // prettier-ignore
 const argitRemoteURIRegex = '^dgit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)'
@@ -119,8 +119,8 @@ export async function pushPackfile(
   }
 
   // Send fee to PST holders
-  const contractState = await readContract(arweave, contractId)
-  const holder = selectWeightedPstHolder(contractState.balances)
+  const contractState = await smartweave.readContract(arweave, contractId)
+  const holder = smartweave.selectWeightedPstHolder(contractState.balances)
   // send a fee. You should inform the user about this fee and amount.
   const pstTx = await arweave.createTransaction(
     { target: holder, quantity: arweave.ar.arToWinston('0.01') },
