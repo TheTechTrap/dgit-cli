@@ -22,7 +22,7 @@ import { pkg } from '../utils/pkg.js'
 import { splitLines } from '../utils/splitLines.js'
 import { parseUploadPackResponse } from '../wire/parseUploadPackResponse.js'
 import { writeUploadPackRequest } from '../wire/writeUploadPackRequest.js'
-import { getRefsOnArweave, fetchPackfiles } from '../utils/arweave.js'
+import { getRefsOnArweave, fetchGitObjects } from '../utils/arweave.js'
 
 /**
  *
@@ -138,22 +138,17 @@ export async function _fetchFromArweave({
     prune,
   })
 
-  const packfiles = await fetchPackfiles(arweave, url)
+  const objects = await fetchGitObjects(arweave, url)
 
-  // Write packfiles
+  // Write objects
   await Promise.all(
-    packfiles.map(async packfile => {
-      const packfilePath = `objects/pack/${packfile.filename}`
-      const fullpath = join(gitdir, packfilePath)
-      const buf = Buffer.from(packfile.data)
+    objects.map(async object => {
+      const subdirectory = object.oid.substring(0, 2)
+      const filename = object.oid.substring(2)
+      const objectPath = `objects/${subdirectory}/${filename}`
+      const fullpath = join(gitdir, objectPath)
+      const buf = Buffer.from(object.data)
       await fs.write(fullpath, buf)
-      const getExternalRefDelta = oid => readObject({ fs, gitdir, oid })
-      const idx = await GitPackIndex.fromPack({
-        pack: buf,
-        getExternalRefDelta,
-        onProgress,
-      })
-      await fs.write(fullpath.replace(/\.pack$/, '.idx'), await idx.toBuffer())
     })
   )
 

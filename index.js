@@ -7758,6 +7758,29 @@ async function fetchPackfiles(arweave, remoteURI) {
   return packfiles
 }
 
+async function fetchGitObjects(arweave, remoteURI) {
+  const query = {
+    op: 'and',
+    expr1: repoQuery(remoteURI),
+    expr2: { op: 'equals', expr1: 'Type', expr2: 'push-git-object' },
+  };
+  const txids = await arweave.arql(query);
+  const objects = await Promise.all(
+    txids.map(async txid => {
+      const tx = await arweave.transactions.get(txid);
+      let oid = '';
+      tx.get('tags').forEach(tag => {
+        const key = tag.get('name', { decode: true, string: true });
+        const value = tag.get('value', { decode: true, string: true });
+        if (key === 'oid') oid = value;
+      });
+      const data = await arweave.transactions.getData(txid, { decode: true });
+      return { data, oid }
+    })
+  );
+  return objects
+}
+
 async function getRefsOnArweave(arweave, remoteURI) {
   const refs = new Map();
   const query = {
@@ -7805,6 +7828,7 @@ var Arweave = /*#__PURE__*/Object.freeze({
   getRef: getRef,
   pushPackfile: pushPackfile,
   fetchPackfiles: fetchPackfiles,
+  fetchGitObjects: fetchGitObjects,
   getRefsOnArweave: getRefsOnArweave
 });
 
@@ -7924,22 +7948,17 @@ async function _fetchFromArweave({
     prune,
   });
 
-  const packfiles = await fetchPackfiles(arweave, url);
+  const objects = await fetchGitObjects(arweave, url);
 
-  // Write packfiles
+  // Write objects
   await Promise.all(
-    packfiles.map(async packfile => {
-      const packfilePath = `objects/pack/${packfile.filename}`;
-      const fullpath = join(gitdir, packfilePath);
-      const buf = Buffer.from(packfile.data);
+    objects.map(async object => {
+      const subdirectory = object.oid.substring(0, 2);
+      const filename = object.oid.substring(2);
+      const objectPath = `objects/${subdirectory}/${filename}`;
+      const fullpath = join(gitdir, objectPath);
+      const buf = Buffer.from(object.data);
       await fs.write(fullpath, buf);
-      const getExternalRefDelta = oid => _readObject({ fs, gitdir, oid });
-      const idx = await GitPackIndex.fromPack({
-        pack: buf,
-        getExternalRefDelta,
-        onProgress,
-      });
-      await fs.write(fullpath.replace(/\.pack$/, '.idx'), await idx.toBuffer());
     })
   );
 
