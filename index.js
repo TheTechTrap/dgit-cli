@@ -7758,6 +7758,26 @@ async function fetchPackfiles(arweave, remoteURI) {
   return packfiles
 }
 
+async function fetchGitObject(arweave, remoteURI, oid) {
+  const data = null;
+  const query = {
+    op: 'and',
+    expr1: repoQuery(remoteURI),
+    expr2: {
+      op: 'and',
+      expr1: { op: 'equals', expr1: 'Type', expr2: 'push-git-object' },
+      expr2: { op: 'equals', expr1: 'oid', expr2: oid },
+    },
+  };
+  const txids = await arweave.arql(query);
+
+  try {
+    data = await arweave.transactions.getData(txids[0], { decode: true });
+  } catch (err) {}
+
+  return data
+}
+
 async function fetchGitObjects(arweave, remoteURI) {
   const query = {
     op: 'and',
@@ -7828,6 +7848,7 @@ var Arweave = /*#__PURE__*/Object.freeze({
   getRef: getRef,
   pushPackfile: pushPackfile,
   fetchPackfiles: fetchPackfiles,
+  fetchGitObject: fetchGitObject,
   fetchGitObjects: fetchGitObjects,
   getRefsOnArweave: getRefsOnArweave
 });
