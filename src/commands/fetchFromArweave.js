@@ -147,8 +147,7 @@ export async function _fetchFromArweave({
       const filename = object.oid.substring(2)
       const objectPath = `objects/${subdirectory}/${filename}`
       const fullpath = join(gitdir, objectPath)
-      const buf = Buffer.from(object.data)
-      await fs.write(fullpath, buf)
+      await fs.write(fullpath, object.data)
     })
   )
 

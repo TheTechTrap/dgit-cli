@@ -157,7 +157,6 @@ export async function fetchPackfiles(arweave, remoteURI) {
 }
 
 export async function fetchGitObject(arweave, remoteURI, oid) {
-  const data = null
   const query = {
     op: 'and',
     expr1: repoQuery(remoteURI),
@@ -169,11 +168,7 @@ export async function fetchGitObject(arweave, remoteURI, oid) {
   }
   const txids = await arweave.arql(query)
 
-  try {
-    data = await arweave.transactions.getData(txids[0], { decode: true })
-  } catch (err) {}
-
-  return data
+  return await arweave.transactions.getData(txids[0], { decode: true })
 }
 
 export async function fetchGitObjects(arweave, remoteURI) {
