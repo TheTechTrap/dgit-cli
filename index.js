@@ -6,6 +6,7 @@ import ignore from 'ignore';
 import pify from 'pify';
 import cleanGitRef from 'clean-git-ref';
 import { readContract, selectWeightedPstHolder } from 'smartweave';
+import axios from 'axios';
 import diff3Merge from 'diff3';
 
 /**
@@ -7602,6 +7603,82 @@ async function clone({
   }
 }
 
+const graphQlEndpoint = 'https://arweave.net/graphql';
+
+const getOidByRef = async (arweave, remoteURI, ref) => {
+  const { repoOnwerAddress, repoName } = parseArgitRemoteURI(remoteURI);
+  const { response } = await axios({
+    url: graphQlEndpoint,
+    method: 'post',
+    data: {
+      query: `
+      query {
+        transactions(
+          owners: ["${repoOnwerAddress}"]
+          tags: [
+            { name: "App-Name", values: ["dgit"] }
+            { name: "Repo", values: ["${repoName}"] }
+            { name: "Type", values: ["update-ref"] }
+            { name: "ref", values: ["${ref}"] }
+          ]
+          first: 1
+        ) {
+          edges {
+            node {
+              id
+            }
+          }
+        }
+      }`,
+    },
+  });
+
+  const parsedResponse = JSON.parse(response);
+  const edges = parsedResponse.data.transactions.edges;
+
+  if (edges.length === 0) {
+    return '0000000000000000000000000000000000000000'
+  }
+
+  const id = edges[0].node.id;
+  return await arweave.transactions.getData(txid, {
+    decode: true,
+    string: true,
+  })
+};
+
+const getTransactionIdByObjectId = async (remoteURI, oid) => {
+  const { repoOnwerAddress, repoName } = parseArgitRemoteURI(remoteURI);
+  const { response } = await axios({
+    url: graphQlEndpoint,
+    method: 'post',
+    data: {
+      query: `
+      query {
+        transactions(
+          owners: ["${repoOnwerAddress}"]
+          tags: [
+            { name: "App-Name", values: ["dgit"] }
+            { name: "Repo", values: ["${repoName}"] }
+            { name: "Type", values: ["push-git-object"] }
+            { name: "oid", values: ["${oid}"] }
+          ]
+          first: 1
+        ) {
+          edges {
+            node {
+              id
+            }
+          }
+        }
+      }`,
+    },
+  });
+
+  const parsedResponse = JSON.parse(response);
+  return parsedResponse.data.transactions.edges[0].node.id
+};
+
 // prettier-ignore
 const argitRemoteURIRegex = '^dgit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)';
 const contractId = 'N9Vfr_3Rw95111UJ6eaT7scGZzDCd2zzpja890758Qc';
@@ -7653,45 +7730,6 @@ async function updateRef(arweave, wallet, remoteURI, name, ref) {
 
   await arweave.transactions.sign(tx, wallet); // Sign transaction
   arweave.transactions.post(tx); // Post transaction
-}
-
-async function getRef(arweave, remoteURI, name) {
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: {
-      op: 'and',
-      expr1: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
-      expr2: { op: 'equals', expr1: 'ref', expr2: name },
-    },
-  };
-  const txids = await arweave.arql(query);
-  const tx_rows = await Promise.all(
-    txids.map(async txid => {
-      let tx_row = {};
-      const tx = await arweave.transactions.get(txid);
-      tx.get('tags').forEach(tag => {
-        const key = tag.get('name', { decode: true, string: true });
-        const value = tag.get('value', { decode: true, string: true });
-        if (key === 'Unix-Time') tx_row.unixTime = value;
-      });
-
-      tx_row.oid = await arweave.transactions.getData(txid, {
-        decode: true,
-        string: true,
-      });
-
-      return tx_row
-    })
-  );
-
-  if (tx_rows.length === 0) return '0000000000000000000000000000000000000000'
-
-  // descending order
-  tx_rows.sort((a, b) => {
-    Number(b.unixTime) - Number(a.unixTime);
-  });
-  return tx_rows[0].oid
 }
 
 async function pushPackfile(
@@ -7759,23 +7797,8 @@ async function fetchPackfiles(arweave, remoteURI) {
 }
 
 async function fetchGitObject(arweave, remoteURI, oid) {
-  const data = null;
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: {
-      op: 'and',
-      expr1: { op: 'equals', expr1: 'Type', expr2: 'push-git-object' },
-      expr2: { op: 'equals', expr1: 'oid', expr2: oid },
-    },
-  };
-  const txids = await arweave.arql(query);
-
-  try {
-    data = await arweave.transactions.getData(txids[0], { decode: true });
-  } catch (err) {}
-
-  return data
+  const id = getTransactionIdByObjectId(remoteURI, oid);
+  return await arweave.transactions.getData(id, { decode: true })
 }
 
 async function fetchGitObjects(arweave, remoteURI) {
@@ -7845,7 +7868,6 @@ var Arweave = /*#__PURE__*/Object.freeze({
   __proto__: null,
   parseArgitRemoteURI: parseArgitRemoteURI,
   updateRef: updateRef,
-  getRef: getRef,
   pushPackfile: pushPackfile,
   fetchPackfiles: fetchPackfiles,
   fetchGitObject: fetchGitObject,
@@ -7978,8 +8000,7 @@ async function _fetchFromArweave({
       const filename = object.oid.substring(2);
       const objectPath = `objects/${subdirectory}/${filename}`;
       const fullpath = join(gitdir, objectPath);
-      const buf = Buffer.from(object.data);
-      await fs.write(fullpath, buf);
+      await fs.write(fullpath, object.data);
     })
   );
 
@@ -11945,7 +11966,8 @@ async function push({
  * @param {object} args
  * @param {import('../models/FileSystem.js').FileSystem} args.fs
  * @param {import { pushToArweave } from '../../index.d';
-HttpClient} args.http
+HttpClient}import { getOidByRef } from '../utils/graphql';
+ args.http
  * @param {ProgressCallback} [args.onProgress]
  * @param {MessageCallback} [args.onMessage]
  * @param {AuthCallback} [args.onAuth]
@@ -12048,7 +12070,7 @@ async function _pushToArweave({
     }
   }
 
-  const oldoid = await getRef(arweave, url, fullRemoteRef);
+  const oldoid = await getOidByRef(arweave, url, fullRemoteRef);
 
   let objects = new Set();
   if (!_delete) {

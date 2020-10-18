@@ -1,4 +1,5 @@
 import * as smartweave from 'smartweave'
+import { getTransactionIdByObjectId } from './graphql'
 
 // prettier-ignore
 const argitRemoteURIRegex = '^dgit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)'
@@ -51,45 +52,6 @@ export async function updateRef(arweave, wallet, remoteURI, name, ref) {
 
   await arweave.transactions.sign(tx, wallet) // Sign transaction
   arweave.transactions.post(tx) // Post transaction
-}
-
-export async function getRef(arweave, remoteURI, name) {
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: {
-      op: 'and',
-      expr1: { op: 'equals', expr1: 'Type', expr2: 'update-ref' },
-      expr2: { op: 'equals', expr1: 'ref', expr2: name },
-    },
-  }
-  const txids = await arweave.arql(query)
-  const tx_rows = await Promise.all(
-    txids.map(async txid => {
-      let tx_row = {}
-      const tx = await arweave.transactions.get(txid)
-      tx.get('tags').forEach(tag => {
-        const key = tag.get('name', { decode: true, string: true })
-        const value = tag.get('value', { decode: true, string: true })
-        if (key === 'Unix-Time') tx_row.unixTime = value
-      })
-
-      tx_row.oid = await arweave.transactions.getData(txid, {
-        decode: true,
-        string: true,
-      })
-
-      return tx_row
-    })
-  )
-
-  if (tx_rows.length === 0) return '0000000000000000000000000000000000000000'
-
-  // descending order
-  tx_rows.sort((a, b) => {
-    Number(b.unixTime) - Number(a.unixTime)
-  })
-  return tx_rows[0].oid
 }
 
 export async function pushPackfile(
@@ -157,18 +119,8 @@ export async function fetchPackfiles(arweave, remoteURI) {
 }
 
 export async function fetchGitObject(arweave, remoteURI, oid) {
-  const query = {
-    op: 'and',
-    expr1: repoQuery(remoteURI),
-    expr2: {
-      op: 'and',
-      expr1: { op: 'equals', expr1: 'Type', expr2: 'push-git-object' },
-      expr2: { op: 'equals', expr1: 'oid', expr2: oid },
-    },
-  }
-  const txids = await arweave.arql(query)
-
-  return await arweave.transactions.getData(txids[0], { decode: true })
+  const id = getTransactionIdByObjectId(remoteURI, oid)
+  return await arweave.transactions.getData(id, { decode: true })
 }
 
 export async function fetchGitObjects(arweave, remoteURI) {

@@ -22,18 +22,15 @@ import { splitLines } from '../utils/splitLines.js'
 import { parseReceivePackResponse } from '../wire/parseReceivePackResponse.js'
 import { writeReceivePackRequest } from '../wire/writeReceivePackRequest.js'
 import { _packObjects } from './packObjects.js'
-import {
-  getRefsOnArweave,
-  getRef,
-  pushPackfile,
-  updateRef,
-} from '../utils/arweave.js'
+import { getRefsOnArweave, pushPackfile, updateRef } from '../utils/arweave.js'
+import { getOidByRef } from '../utils/graphql.js'
 
 /**
  * @param {object} args
  * @param {import('../models/FileSystem.js').FileSystem} args.fs
  * @param {import { pushToArweave } from '../../index.d';
-HttpClient} args.http
+HttpClient}import { getOidByRef } from '../utils/graphql';
+ args.http
  * @param {ProgressCallback} [args.onProgress]
  * @param {MessageCallback} [args.onMessage]
  * @param {AuthCallback} [args.onAuth]
@@ -136,7 +133,7 @@ export async function _pushToArweave({
     }
   }
 
-  const oldoid = await getRef(arweave, url, fullRemoteRef)
+  const oldoid = await getOidByRef(arweave, url, fullRemoteRef)
 
   let objects = new Set()
   if (!_delete) {
