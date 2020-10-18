@@ -119,7 +119,7 @@ export async function fetchPackfiles(arweave, remoteURI) {
 }
 
 export async function fetchGitObject(arweave, remoteURI, oid) {
-  const id = getTransactionIdByObjectId(remoteURI, oid)
+  const id = await getTransactionIdByObjectId(remoteURI, oid)
   return await arweave.transactions.getData(id, { decode: true })
 }
 

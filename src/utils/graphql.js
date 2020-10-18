@@ -4,20 +4,20 @@ import { parseArgitRemoteURI } from './arweave'
 const graphQlEndpoint = 'https://arweave.net/graphql'
 
 export const getOidByRef = async (arweave, remoteURI, ref) => {
-  const { repoOnwerAddress, repoName } = parseArgitRemoteURI(remoteURI)
-  const { response } = await axios({
+  const { repoOwnerAddress, repoName } = parseArgitRemoteURI(remoteURI)
+  const { data } = await axios({
     url: graphQlEndpoint,
     method: 'post',
     data: {
       query: `
       query {
         transactions(
-          owners: ["${repoOnwerAddress}"]
+          owners: ["${repoOwnerAddress}"]
           tags: [
-            { name: "App-Name", values: ["dgit"] }
             { name: "Repo", values: ["${repoName}"] }
-            { name: "Type", values: ["update-ref"] }
             { name: "ref", values: ["${ref}"] }
+            { name: "Type", values: ["update-ref"] }
+            { name: "App-Name", values: ["dgit"] }
           ]
           first: 1
         ) {
@@ -31,35 +31,34 @@ export const getOidByRef = async (arweave, remoteURI, ref) => {
     },
   })
 
-  const parsedResponse = JSON.parse(response)
-  const edges = parsedResponse.data.transactions.edges
+  const edges = data.data.transactions.edges
 
   if (edges.length === 0) {
     return '0000000000000000000000000000000000000000'
   }
 
   const id = edges[0].node.id
-  return await arweave.transactions.getData(txid, {
+  return await arweave.transactions.getData(id, {
     decode: true,
     string: true,
   })
 }
 
 export const getTransactionIdByObjectId = async (remoteURI, oid) => {
-  const { repoOnwerAddress, repoName } = parseArgitRemoteURI(remoteURI)
-  const { response } = await axios({
+  const { repoOwnerAddress, repoName } = parseArgitRemoteURI(remoteURI)
+  const { data } = await axios({
     url: graphQlEndpoint,
     method: 'post',
     data: {
       query: `
       query {
         transactions(
-          owners: ["${repoOnwerAddress}"]
+          owners: ["${repoOwnerAddress}"]
           tags: [
-            { name: "App-Name", values: ["dgit"] }
+            { name: "oid", values: ["${oid}"] }
             { name: "Repo", values: ["${repoName}"] }
             { name: "Type", values: ["push-git-object"] }
-            { name: "oid", values: ["${oid}"] }
+            { name: "App-Name", values: ["dgit"] }
           ]
           first: 1
         ) {
@@ -73,6 +72,6 @@ export const getTransactionIdByObjectId = async (remoteURI, oid) => {
     },
   })
 
-  const parsedResponse = JSON.parse(response)
-  return parsedResponse.data.transactions.edges[0].node.id
+  const edges = data.data.transactions.edges
+  return edges[0].node.id
 }
