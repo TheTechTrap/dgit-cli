@@ -3,7 +3,7 @@ import axios from 'axios'
 const graphQlEndpoint = 'https://arweave.net/graphql'
 
 // prettier-ignore
-const argitRemoteURIRegex = '^dgit:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)'
+const argitRemoteURIRegex = '^gitopia:\/\/([a-zA-Z0-9-_]{43})\/([A-Za-z0-9_.-]*)'
 
 export function parseArgitRemoteURI(remoteURI) {
   const matchGroups = remoteURI.match(argitRemoteURIRegex)
@@ -38,10 +38,10 @@ export const getOidByRef = async (arweave, remoteURI, ref) => {
           owners: ["${repoOwnerAddress}"]
           tags: [
             { name: "Repo", values: ["${repoName}"] }
-            { name: "version", values: ["0.0.2"] }
-            { name: "ref", values: ["${ref}"] }
+            { name: "Version", values: ["0.0.2"] }
+            { name: "Ref", values: ["${ref}"] }
             { name: "Type", values: ["update-ref"] }
-            { name: "App-Name", values: ["dgit"] }
+            { name: "App-Name", values: ["gitopia"] }
           ]
           first: 10
         ) {
@@ -97,8 +97,9 @@ export const getAllRefs = async (arweave, remoteURI) => {
           owners: ["${repoOwnerAddress}"]
           tags: [
             { name: "Repo", values: ["${repoName}"] }
+            { name: "Version", values: ["0.0.2"] }
             { name: "Type", values: ["update-ref"] }
-            { name: "App-Name", values: ["dgit"] }
+            { name: "App-Name", values: ["gitopia"] }
           ]
         ) {
           edges {
@@ -118,7 +119,7 @@ export const getAllRefs = async (arweave, remoteURI) => {
 
   for (const edge of edges) {
     for (const tag of edge.node.tags) {
-      if (tag.name === "ref") {
+      if (tag.name === "Ref") {
         refs.add(tag.value);
         break
       }
@@ -143,10 +144,11 @@ export const getTransactionIdByObjectId = async (remoteURI, oid) => {
         transactions(
           owners: ["${repoOwnerAddress}"]
           tags: [
-            { name: "oid", values: ["${oid}"] }
+            { name: "Oid", values: ["${oid}"] }
+            { name: "Version", values: ["0.0.2"] }
             { name: "Repo", values: ["${repoName}"] }
-            { name: "Type", values: ["push-git-object"] }
-            { name: "App-Name", values: ["dgit"] }
+            { name: "Type", values: ["git-object"] }
+            { name: "App-Name", values: ["gitopia"] }
           ]
           first: 1
         ) {
