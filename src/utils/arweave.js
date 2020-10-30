@@ -64,7 +64,10 @@ export const getOidByRef = async (arweave, remoteURI, ref) => {
 
   const edges = data.data.transactions.edges
   if (edges.length === 0) {
-    return '0000000000000000000000000000000000000000'
+    return {
+      oid: '0000000000000000000000000000000000000000',
+      numCommits: 0
+    }
   }
 
   edges.sort((a, b) => {
@@ -77,10 +80,12 @@ export const getOidByRef = async (arweave, remoteURI, ref) => {
   })
 
   const id = edges[0].node.id
-  return await arweave.transactions.getData(id, {
+  const data = await arweave.transactions.getData(id, {
     decode: true,
     string: true,
   })
+
+  return JSON.parse(data)
 }
 
 export const getAllRefs = async (arweave, remoteURI) => {
