@@ -80,12 +80,12 @@ export const getOidByRef = async (arweave, remoteURI, ref) => {
   })
 
   const id = edges[0].node.id
-  const data = await arweave.transactions.getData(id, {
+  const response = await arweave.transactions.getData(id, {
     decode: true,
     string: true,
   })
 
-  return JSON.parse(data)
+  return JSON.parse(response)
 }
 
 export const getAllRefs = async (arweave, remoteURI) => {
