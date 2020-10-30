@@ -65,7 +65,7 @@ export const getOidByRef = async (arweave, remoteURI, ref) => {
   const edges = data.data.transactions.edges
   if (edges.length === 0) {
     return {
-      oid: '0000000000000000000000000000000000000000',
+      oid: null,
       numCommits: 0
     }
   }
@@ -132,7 +132,8 @@ export const getAllRefs = async (arweave, remoteURI) => {
   }
 
   for (const ref of refs) {
-    refOidObj[ref] = await getOidByRef(arweave, remoteURI, ref);
+    const { oid } = await getOidByRef(arweave, remoteURI, ref);
+    refOidObj[ref] = oid
   }
 
   return refOidObj;
