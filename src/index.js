@@ -10,7 +10,6 @@ import { annotatedTag } from './api/annotatedTag.js'
 import { branch } from './api/branch.js'
 import { checkout } from './api/checkout.js'
 import { clone } from './api/clone.js'
-import { cloneFromArweave } from './api/cloneFromArweave.js'
 import { commit } from './api/commit.js'
 import { currentBranch } from './api/currentBranch.js'
 import { deleteBranch } from './api/deleteBranch.js'
@@ -21,7 +20,6 @@ import { expandOid } from './api/expandOid.js'
 import { expandRef } from './api/expandRef.js'
 import { fastForward } from './api/fastForward.js'
 import { fetch } from './api/fetch.js'
-import { fetchFromArweave } from './api/fetchFromArweave.js'
 import { findMergeBase } from './api/findMergeBase.js'
 import { findRoot } from './api/findRoot.js'
 import { getConfig } from './api/getConfig.js'
@@ -43,7 +41,6 @@ import { merge } from './api/merge.js'
 import { packObjects } from './api/packObjects.js'
 import { pull } from './api/pull.js'
 import { push } from './api/push.js'
-import { pushToArweave } from './api/pushToArweave.js'
 import { readBlob } from './api/readBlob.js'
 import { readCommit } from './api/readCommit.js'
 import { readNote } from './api/readNote.js'
@@ -68,12 +65,10 @@ import { writeRef } from './api/writeRef.js'
 import { writeTag } from './api/writeTag.js'
 import { writeTree } from './api/writeTree.js'
 import * as Errors from './errors/index.js'
-import * as Arweave from './utils/arweave.js'
 
 // named exports
 export {
   Errors,
-  Arweave,
   STAGE,
   TREE,
   WORKDIR,
@@ -84,7 +79,6 @@ export {
   branch,
   checkout,
   clone,
-  cloneFromArweave,
   commit,
   getConfig,
   getConfigAll,
@@ -98,7 +92,6 @@ export {
   expandRef,
   fastForward,
   fetch,
-  fetchFromArweave,
   findMergeBase,
   findRoot,
   getRemoteInfo,
@@ -118,7 +111,6 @@ export {
   packObjects,
   pull,
   push,
-  pushToArweave,
   readBlob,
   readCommit,
   readNote,
@@ -146,7 +138,6 @@ export {
 // default export
 export default {
   Errors,
-  Arweave,
   STAGE,
   TREE,
   WORKDIR,
@@ -157,7 +148,6 @@ export default {
   branch,
   checkout,
   clone,
-  cloneFromArweave,
   commit,
   getConfig,
   getConfigAll,
@@ -171,7 +161,6 @@ export default {
   expandRef,
   fastForward,
   fetch,
-  fetchFromArweave,
   findMergeBase,
   findRoot,
   getRemoteInfo,
@@ -191,7 +180,6 @@ export default {
   packObjects,
   pull,
   push,
-  pushToArweave,
   readBlob,
   readCommit,
   readNote,
